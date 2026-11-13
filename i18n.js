@@ -517,9 +517,9 @@ en: {
   synFx: { Fire: (p, k) => `Fire hits burn ${p}% × ${k} ticks`, Ice: (p, c) => `all hits +${p}% · Ice crit +${c}%`, Thunder: (c, n) => `Thunder hits: ${c}% → ${n} bolts` },
   lv3: { Fire: 'INFERNO: +1 burn tick per 3 more Fire items', Ice: 'SHATTER: +1× crit damage for everything', Thunder: 'STORM: chain bolts can crit' },
   combosT: 'COMBOS', comboN: { melt: 'MELT', superconduct: 'SUPERCONDUCT', overload: 'OVERLOAD' },
-  comboD: { melt: 'Fire + Ice Lv1: burn ×3', superconduct: 'Ice + Thunder Lv1: crit damage ×2', overload: 'Fire + Thunder Lv1: an explosion of +35% of all hits' },
+  comboD: { melt: 'Fire + Ice: burn ×4, then ×1.6 per combo Lv (= lower of the two Lv)', superconduct: 'Ice + Thunder: crit damage ×2.5, then ×1.4 per combo Lv', overload: 'Fire + Thunder: explosion +100% of all hits, then ×1.5 per combo Lv' },
   comboOff: 'needs two elements at Lv1 (3 items each)',
-  weakT: 'WEAK', resistT: 'RESISTS', nextBoss: 'NEXT', infWeakTag: (x) => `WEAKNESS ×${x}`, infResTag: (x) => `RESISTED ×${x}`,
+  weakT: 'WEAK', resistT: 'RESISTS', nextBoss: 'NEXT', infWeakTag: (x) => `WEAKNESS ×${x}`, hqTag: 'HIGH QUALITY', infResTag: (x) => `RESISTED ×${x}`,
   infNote: 'Your strike takes the element of the chest you open', infPop: (el, x) => `${el} ×${x}!`,
   execPop: 'EXECUTE!', execLine: (p) => `Execute line ${p}%`, echoTag: 'ECHO', overloadPop: (v) => `OVERLOAD +${v}`, meltPop: 'MELT ×3!', scPop: 'SUPERCONDUCT!',
   permPop: (p) => `+${p}% PERMANENT`, permLine: (p) => `Permanent overkill bonus +${p}% damage`, greedPop: 'GREED: +1 RARITY!',
@@ -542,9 +542,9 @@ zh: {
   synFx: { Fire: (p, k) => `火焰命中灼烧 ${p}% × ${k} 跳`, Ice: (p, c) => `所有命中 +${p}% · 冰霜暴击 +${c}%`, Thunder: (c, n) => `雷电命中：${c}% → ${n} 道闪电` },
   lv3: { Fire: '炼狱：每多 3 件火焰装备 +1 跳灼烧', Ice: '碎冰：所有暴击伤害 +1 倍', Thunder: '风暴：连锁闪电也能暴击' },
   combosT: '元素反应', comboN: { melt: '融化', superconduct: '超导', overload: '超载' },
-  comboD: { melt: '火 + 冰 1 级：灼烧 ×3', superconduct: '冰 + 雷 1 级：暴击伤害 ×2', overload: '火 + 雷 1 级：爆炸，追加全部命中的 35%' },
+  comboD: { melt: '火 + 冰：灼烧 ×4，组合每升 1 级再 ×1.6（组合等级 = 两者较低等级）', superconduct: '冰 + 雷：暴击伤害 ×2.5，组合每升 1 级再 ×1.4', overload: '火 + 雷：爆炸追加全部命中的 100%，组合每升 1 级再 ×1.5' },
   comboOff: '需要两种元素都到 1 级（各 3 件）',
-  weakT: '弱点', resistT: '抗性', nextBoss: '下一个', infWeakTag: (x) => `弱点 ×${x}`, infResTag: (x) => `被抵抗 ×${x}`,
+  weakT: '弱点', resistT: '抗性', nextBoss: '下一个', infWeakTag: (x) => `弱点 ×${x}`, hqTag: '高品质', infResTag: (x) => `被抵抗 ×${x}`,
   infNote: '你的出击会带上所开宝箱的元素', infPop: (el, x) => `${el} ×${x}！`,
   execPop: '斩杀！', execLine: (p) => `斩杀线 ${p}%`, echoTag: '回响', overloadPop: (v) => `超载 +${v}`, meltPop: '融化 ×3！', scPop: '超导！',
   permPop: (p) => `永久 +${p}%`, permLine: (p) => `永久溢出加成：伤害 +${p}%`, greedPop: '贪婪：稀有度 +1！',
@@ -567,9 +567,9 @@ ja: {
   synFx: { Fire: (p, k) => `火のヒットの ${p}% を ${k} 回燃焼`, Ice: (p, c) => `全ヒット +${p}% · 氷の会心 +${c}%`, Thunder: (c, n) => `雷のヒット：${c}% で稲妻 ${n} 本` },
   lv3: { Fire: '業火：火の装備 3 個ごとに燃焼 +1 回', Ice: '粉砕：全ての会心ダメージ +1倍', Thunder: '嵐：連鎖の稲妻も会心する' },
   combosT: '元素反応', comboN: { melt: '溶解', superconduct: '超電導', overload: '過負荷' },
-  comboD: { melt: '火 + 氷 Lv1：燃焼 ×3', superconduct: '氷 + 雷 Lv1：会心ダメージ ×2', overload: '火 + 雷 Lv1：全ヒットの35%の爆発' },
+  comboD: { melt: '火 + 氷：燃焼 ×4、コンボLvごとに さらに×1.6（低い方のLv）', superconduct: '氷 + 雷：会心ダメージ ×2.5、コンボLvごとに ×1.4', overload: '火 + 雷：全ヒットの100%の爆発、コンボLvごとに ×1.5' },
   comboOff: '2つの元素を Lv1 に（各3個）',
-  weakT: '弱点', resistT: '耐性', nextBoss: '次', infWeakTag: (x) => `弱点 ×${x}`, infResTag: (x) => `耐性 ×${x}`,
+  weakT: '弱点', resistT: '耐性', nextBoss: '次', infWeakTag: (x) => `弱点 ×${x}`, hqTag: '高品質', infResTag: (x) => `耐性 ×${x}`,
   infNote: '開けた宝箱の元素が攻撃に宿る', infPop: (el, x) => `${el} ×${x}！`,
   execPop: '処刑！', execLine: (p) => `処刑ライン ${p}%`, echoTag: '残響', overloadPop: (v) => `過負荷 +${v}`, meltPop: '溶解 ×3！', scPop: '超電導！',
   permPop: (p) => `永続 +${p}%`, permLine: (p) => `永続オーバーキル ボーナス +${p}%`, greedPop: '強欲：レア度 +1！',
@@ -592,9 +592,9 @@ ko: {
   synFx: { Fire: (p, k) => `불 타격의 ${p}% × ${k}회 화상`, Ice: (p, c) => `모든 타격 +${p}% · 얼음 치명 +${c}%`, Thunder: (c, n) => `번개 타격: ${c}% → 번개 ${n}개` },
   lv3: { Fire: '연옥: 불 장비 3개마다 화상 +1회', Ice: '산산조각: 모든 치명타 피해 +1배', Thunder: '폭풍: 연쇄 번개도 치명타' },
   combosT: '원소 반응', comboN: { melt: '융해', superconduct: '초전도', overload: '과부하' },
-  comboD: { melt: '불 + 얼음 Lv1: 화상 ×3', superconduct: '얼음 + 번개 Lv1: 치명타 피해 ×2', overload: '불 + 번개 Lv1: 모든 타격의 35% 폭발' },
+  comboD: { melt: '불 + 얼음: 화상 ×4, 콤보 Lv마다 ×1.6 (둘 중 낮은 Lv)', superconduct: '얼음 + 번개: 치명타 피해 ×2.5, 콤보 Lv마다 ×1.4', overload: '불 + 번개: 모든 타격의 100% 폭발, 콤보 Lv마다 ×1.5' },
   comboOff: '두 원소를 Lv1로 (각 3개)',
-  weakT: '약점', resistT: '저항', nextBoss: '다음', infWeakTag: (x) => `약점 ×${x}`, infResTag: (x) => `저항됨 ×${x}`,
+  weakT: '약점', resistT: '저항', nextBoss: '다음', infWeakTag: (x) => `약점 ×${x}`, hqTag: '고품질', infResTag: (x) => `저항됨 ×${x}`,
   infNote: '연 상자의 원소가 공격에 깃든다', infPop: (el, x) => `${el} ×${x}!`,
   execPop: '처형!', execLine: (p) => `처형선 ${p}%`, echoTag: '메아리', overloadPop: (v) => `과부하 +${v}`, meltPop: '융해 ×3!', scPop: '초전도!',
   permPop: (p) => `영구 +${p}%`, permLine: (p) => `영구 초과 피해 보너스 +${p}%`, greedPop: '탐욕: 등급 +1!',
@@ -617,9 +617,9 @@ pt: {
   synFx: { Fire: (p, k) => `golpes de Fogo queimam ${p}% × ${k}`, Ice: (p, c) => `todos os golpes +${p}% · crít. Gelo +${c}%`, Thunder: (c, n) => `golpes de Trovão: ${c}% → ${n} raios` },
   lv3: { Fire: 'INFERNO: +1 tique a cada 3 itens de Fogo extras', Ice: 'ESTILHAÇAR: +1× dano crítico para tudo', Thunder: 'TEMPESTADE: raios em cadeia podem critar' },
   combosT: 'COMBOS', comboN: { melt: 'DERRETER', superconduct: 'SUPERCONDUÇÃO', overload: 'SOBRECARGA' },
-  comboD: { melt: 'Fogo + Gelo Nv1: queimadura ×3', superconduct: 'Gelo + Trovão Nv1: dano crítico ×2', overload: 'Fogo + Trovão Nv1: explosão de +35% dos golpes' },
+  comboD: { melt: 'Fogo + Gelo: queimadura ×4, e ×1.6 por Nv do combo (o menor dos dois)', superconduct: 'Gelo + Trovão: dano crítico ×2.5, e ×1.4 por Nv do combo', overload: 'Fogo + Trovão: explosão de +100% dos golpes, e ×1.5 por Nv do combo' },
   comboOff: 'precisa de dois elementos no Nv1 (3 itens cada)',
-  weakT: 'FRACO', resistT: 'RESISTE', nextBoss: 'PRÓXIMO', infWeakTag: (x) => `FRAQUEZA ×${x}`, infResTag: (x) => `RESISTIDO ×${x}`,
+  weakT: 'FRACO', resistT: 'RESISTE', nextBoss: 'PRÓXIMO', infWeakTag: (x) => `FRAQUEZA ×${x}`, hqTag: 'ALTA QUALIDADE', infResTag: (x) => `RESISTIDO ×${x}`,
   infNote: 'Seu ataque assume o elemento do baú que você abrir', infPop: (el, x) => `${el} ×${x}!`,
   execPop: 'EXECUÇÃO!', execLine: (p) => `Linha de execução ${p}%`, echoTag: 'ECO', overloadPop: (v) => `SOBRECARGA +${v}`, meltPop: 'DERRETER ×3!', scPop: 'SUPERCONDUÇÃO!',
   permPop: (p) => `+${p}% PERMANENTE`, permLine: (p) => `Bônus permanente de excesso +${p}%`, greedPop: 'GANÂNCIA: +1 RARIDADE!',
@@ -642,9 +642,9 @@ es: {
   synFx: { Fire: (p, k) => `golpes de Fuego queman ${p}% × ${k}`, Ice: (p, c) => `todos los golpes +${p}% · crít. Hielo +${c}%`, Thunder: (c, n) => `golpes de Trueno: ${c}% → ${n} rayos` },
   lv3: { Fire: 'INFIERNO: +1 tic por cada 3 objetos de Fuego extra', Ice: 'ESTALLIDO: +1× daño crítico para todo', Thunder: 'TORMENTA: los rayos en cadena pueden ser críticos' },
   combosT: 'COMBOS', comboN: { melt: 'FUSIÓN', superconduct: 'SUPERCONDUCCIÓN', overload: 'SOBRECARGA' },
-  comboD: { melt: 'Fuego + Hielo Nv1: quemadura ×3', superconduct: 'Hielo + Trueno Nv1: daño crítico ×2', overload: 'Fuego + Trueno Nv1: explosión de +35% de los golpes' },
+  comboD: { melt: 'Fuego + Hielo: quemadura ×4, y ×1.6 por Nv del combo (el menor de los dos)', superconduct: 'Hielo + Trueno: daño crítico ×2.5, y ×1.4 por Nv del combo', overload: 'Fuego + Trueno: explosión de +100% de los golpes, y ×1.5 por Nv del combo' },
   comboOff: 'necesita dos elementos en Nv1 (3 objetos cada uno)',
-  weakT: 'DÉBIL', resistT: 'RESISTE', nextBoss: 'SIGUIENTE', infWeakTag: (x) => `DEBILIDAD ×${x}`, infResTag: (x) => `RESISTIDO ×${x}`,
+  weakT: 'DÉBIL', resistT: 'RESISTE', nextBoss: 'SIGUIENTE', infWeakTag: (x) => `DEBILIDAD ×${x}`, hqTag: 'ALTA CALIDAD', infResTag: (x) => `RESISTIDO ×${x}`,
   infNote: 'Tu ataque toma el elemento del cofre que abras', infPop: (el, x) => `¡${el} ×${x}!`,
   execPop: '¡EJECUCIÓN!', execLine: (p) => `Línea de ejecución ${p}%`, echoTag: 'ECO', overloadPop: (v) => `SOBRECARGA +${v}`, meltPop: '¡FUSIÓN ×3!', scPop: '¡SUPERCONDUCCIÓN!',
   permPop: (p) => `+${p}% PERMANENTE`, permLine: (p) => `Bono permanente de exceso +${p}%`, greedPop: '¡CODICIA: +1 RAREZA!',
@@ -655,6 +655,59 @@ es: {
 /*</es>*/
 };
 for (const l of LANGS) Object.assign(I18N[l], I18N8[l]);
+
+// v7.2 build readability: next-level reward, combo condition/effect, chest build hints, level-up banners
+const I18N9 = {
+/*<en>*/
+en: {
+  rw: { Fire: (p, k) => `burn ${p}%×${k}`, Ice: (p, c) => `frost +${p}% crit +${c}%`, Thunder: (c, n) => `${c}% → ${n} bolts` }, rwMast: (x) => `dmg ×${x}`,
+  lvUp: (el, n) => `${el} Lv${n}!`, comboNeed: (n) => `need ${n} more`, hintLv: (n) => `1 more to Lv${n}!`, hintCombo: (c) => `Unlocks ${c}!`,
+  comboUp: (c, n) => `${c} Lv${n}!`, comboUnl: (c) => `${c} UNLOCKED!`,
+  cfx: { melt: (x) => `burn ×${x}`, superconduct: (x) => `crit ×${x}`, overload: (p) => `boom +${p}%` },
+},
+/*</en>*/
+/*<zh>*/
+zh: {
+  rw: { Fire: (p, k) => `灼烧 ${p}%×${k}`, Ice: (p, c) => `冰冻 +${p}% · 暴击 +${c}%`, Thunder: (c, n) => `${c}% → ${n} 道闪电` }, rwMast: (x) => `伤害 ×${x}`,
+  lvUp: (el, n) => `${el} ${n} 级！`, comboNeed: (n) => `还差 ${n} 件`, hintLv: (n) => `再 1 件升 ${n} 级！`, hintCombo: (c) => `解锁${c}！`,
+  comboUp: (c, n) => `${c} ${n} 级！`, comboUnl: (c) => `${c} 解锁！`,
+  cfx: { melt: (x) => `灼烧 ×${x}`, superconduct: (x) => `暴伤 ×${x}`, overload: (p) => `爆炸 +${p}%` },
+},
+/*</zh>*/
+/*<ja>*/
+ja: {
+  rw: { Fire: (p, k) => `燃焼 ${p}%×${k}`, Ice: (p, c) => `凍結 +${p}% · 会心 +${c}%`, Thunder: (c, n) => `${c}% → 稲妻${n}本` }, rwMast: (x) => `ダメージ ×${x}`,
+  lvUp: (el, n) => `${el} Lv${n}！`, comboNeed: (n) => `あと${n}個`, hintLv: (n) => `あと1個でLv${n}！`, hintCombo: (c) => `${c} 解放！`,
+  comboUp: (c, n) => `${c} Lv${n}！`, comboUnl: (c) => `${c} 解放！`,
+  cfx: { melt: (x) => `燃焼 ×${x}`, superconduct: (x) => `会心 ×${x}`, overload: (p) => `爆発 +${p}%` },
+},
+/*</ja>*/
+/*<ko>*/
+ko: {
+  rw: { Fire: (p, k) => `화상 ${p}%×${k}`, Ice: (p, c) => `빙결 +${p}% · 치명 +${c}%`, Thunder: (c, n) => `${c}% → 번개 ${n}개` }, rwMast: (x) => `피해 ×${x}`,
+  lvUp: (el, n) => `${el} Lv${n}!`, comboNeed: (n) => `${n}개 더 필요`, hintLv: (n) => `1개 더 → Lv${n}!`, hintCombo: (c) => `${c} 해금!`,
+  comboUp: (c, n) => `${c} Lv${n}!`, comboUnl: (c) => `${c} 해금!`,
+  cfx: { melt: (x) => `화상 ×${x}`, superconduct: (x) => `치명 ×${x}`, overload: (p) => `폭발 +${p}%` },
+},
+/*</ko>*/
+/*<pt>*/
+pt: {
+  rw: { Fire: (p, k) => `queima ${p}%×${k}`, Ice: (p, c) => `gelo +${p}% · crít +${c}%`, Thunder: (c, n) => `${c}% → ${n} raios` }, rwMast: (x) => `dano ×${x}`,
+  lvUp: (el, n) => `${el} Nv${n}!`, comboNeed: (n) => `faltam ${n}`, hintLv: (n) => `+1 para Nv${n}!`, hintCombo: (c) => `Desbloqueia ${c}!`,
+  comboUp: (c, n) => `${c} Nv${n}!`, comboUnl: (c) => `${c} DESBLOQUEADO!`,
+  cfx: { melt: (x) => `queima ×${x}`, superconduct: (x) => `crít ×${x}`, overload: (p) => `explosão +${p}%` },
+},
+/*</pt>*/
+/*<es>*/
+es: {
+  rw: { Fire: (p, k) => `quema ${p}%×${k}`, Ice: (p, c) => `hielo +${p}% · crít +${c}%`, Thunder: (c, n) => `${c}% → ${n} rayos` }, rwMast: (x) => `daño ×${x}`,
+  lvUp: (el, n) => `¡${el} Nv${n}!`, comboNeed: (n) => `faltan ${n}`, hintLv: (n) => `¡+1 para Nv${n}!`, hintCombo: (c) => `¡Desbloquea ${c}!`,
+  comboUp: (c, n) => `¡${c} Nv${n}!`, comboUnl: (c) => `¡${c} DESBLOQUEADO!`,
+  cfx: { melt: (x) => `quema ×${x}`, superconduct: (x) => `crít ×${x}`, overload: (p) => `explosión +${p}%` },
+},
+/*</es>*/
+};
+for (const l of LANGS) Object.assign(I18N[l], I18N9[l]);
 const NOUN_KEYS = ['Sword', 'Dagger', 'Mace', 'Bow', 'Axe', 'Blade', 'Staff', 'Spear', 'Armor', 'Boots', 'Helm', 'Amulet', 'Ring', 'Pendant', 'Medal', 'Talisman', 'Relic', 'Idol', 'Grimoire', 'Shard'];
 const CJK_FONT = { zh: 'FusionZH', ja: 'FusionJA', ko: 'FusionKO' };
 function detectLang() {

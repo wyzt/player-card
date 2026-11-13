@@ -4,9 +4,9 @@
 // Gear STACKS FOREVER. Every weapon hits on its own with its own crit chance; armour & accessories never crit, they add
 // order-independent effects (element %, crit damage, combo, execute line, echo, greed, overkill conversion).
 const RULES = {
-  hp0: 30, hpGrowth: 1.75, hpCurve: 0.01, // boss HP at stage s (0-based) = hp0 * hpGrowth^s * e^(hpCurve*s^2): gentle start, steeper later
-  bigEvery: 5, bigHp: 2.5, bigRank: 1.6, // BIG BOSS: x2.5 HP; its chests roll rarity as if stage were x1.6 further
-  lootGrowth: 1.4,                 // weapon damage of loot found at stage s is x lootGrowth^s
+  hp0: 28, hpGrowth: 3.05, hpStart: 2.9, hpRamp: 3, hpCurve: 0.003, // boss HP at stage s (0-based) = hp0 * hpGrowth^s * e^(hpCurve*s^2): gentle start, steeper later
+  bigEvery: 5, bigHp: 1.4, bigRank: 1.6, // BIG BOSS: x1.4 HP; its chests roll rarity as if stage were x1.6 further
+  lootGrowth: 1.3,                 // weapon damage of loot found at stage s is x lootGrowth^s
   // rarity: White, Green, Blue, Purple, Gold, Legendary - power multiplier and base weights; higher ranks get likelier with stage
   rank: { pow: [1, 1.5, 2.2, 3.3, 5, 8], w: [52, 27, 13, 6, 1.7, 0.3], perStage: 0.09 },
   kindW: { weapon: 0.55, armor: 0.2, accessory: 0.25 },
@@ -25,21 +25,26 @@ const RULES = {
   gem: 0.08,                       // PURIFY GEM chance from a normal chest (auto-removes the worst cursed item, else stored)
   hero: { atk: 40, crit: 0.05 },   // the hero's own swing grows like loot: atk * lootGrowth^stage
   critX: 2,
-  boss: { weak: 1.25, resist: 0.8,  // each weapon of the boss's weak / resisted element
-    infWeak: 2.2, infResist: 0.3 },    // INFUSION: the whole strike takes the element of the chest you opened this stage
-  // ELEMENTS: same-element item count 3 / 6 / 9 -> Lv1..3, each level adds a qualitative upgrade
-  elem: { at: [3, 6, 9],
+  // ELEMENTS: every 3 same-element items = +1 Lv (no cap); Lv1-3 add qualitative upgrades, every Lv adds MASTERY
+  elem: {
     // FIRE: your Fire hits keep burning (x% of the Fire hits per tick). Lv3 INFERNO: +1 tick per 3 extra Fire items
-    Fire: { burn: [0, 0.15, 0.4, 1.0], ticks: [0, 3, 4, 6] },
+    Fire: { burn: [0, 0.3, 0.7, 1.5], ticks: [0, 3, 4, 6] },
     // ICE: frostbite amplifies EVERY hit; Ice weapons crit more. Lv3 SHATTER: +1x crit damage for everything
-    Ice: { vuln: [1, 1.2, 1.7, 3.0], crit: [0, 0.1, 0.2, 0.35], shatter: 1 },
+    Ice: { vuln: [1, 1.3, 1.8, 3.0], crit: [0, 0.1, 0.2, 0.35], shatter: 1 },
     // THUNDER: each Thunder hit may fork into chain bolts. Lv3 STORM: chain bolts can crit
-    Thunder: { chance: [0, 0.3, 0.5, 0.7], chains: [0, 2, 4, 7], bolt: 0.8 } },
+    Thunder: { chance: [0, 0.4, 0.6, 0.8], chains: [0, 2, 4, 7], bolt: 0.8 },
+    // MASTERY: weapons of an element hit x2 harder per Lv of that element (compounding: what you STACK is the build)
+    step: 3, mastery: 2 },
   // DUAL COMBOS when two elements are both Lv1+: MELT (Fire+Ice) burn x3, SUPERCONDUCT (Ice+Thunder) crit damage x2,
   // OVERLOAD (Fire+Thunder) an explosion of 35% of all hits
-  combos: { melt: 3, superconduct: 2, overload: 0.35 },
+  // each combo's power grows with the LOWER level of its two elements: base x per^(lv-1)
+  combos: { res: 3, melt: { base: 4, per: 1.6 }, superconduct: { base: 2.5, per: 1.4 }, overload: { base: 1, per: 1.5 } },
+  // HIGH QUALITY chests: some normal chests shimmer - better rarity odds (not a guarantee)
+  hq: { chance: 0.25, shift: 1.6 },
   bonus: { minor: false, chestAt: 3, jackpotAt: 8, jackpotShift: 1.6 },
   milestone: 5,
+  firstWeapons: 2,
+  smart: { hq: 7, logCap: 0, tight: 1.5, w: 50, dark: 3 },   // sim-only weights of the 'smart' pick policy
   variants: { weapon: 5, armor: 2, accessory: 2, cursed: 4 },
   cap: 1e300,
 };
@@ -50,15 +55,17 @@ const ri = (rng, a, b) => a + Math.floor(rng() * (b - a + 1));
 const pick = (rng, arr) => arr[Math.floor(rng() * arr.length)];
 const capN = (x) => (x > RULES.cap ? RULES.cap : x < -RULES.cap ? -RULES.cap : x);
 const isBig = (s) => (s + 1) % RULES.bigEvery === 0;
-const bossHp = (s) => capN(RULES.hp0 * Math.pow(RULES.hpGrowth, s) * Math.exp(RULES.hpCurve * s * s) * (isBig(s) ? RULES.bigHp : 1));
+// per-stage HP growth ramps from hpStart to hpGrowth over the first hpRamp stages (a gentle start, no early wall)
+const hpPow = (s) => { const R = RULES; let l = 0; for (let k = 0; k < s; k++) l += Math.log(R.hpStart + (R.hpGrowth - R.hpStart) * Math.min(1, k / R.hpRamp)); return Math.exp(l); };
+const bossHp = (s) => capN(RULES.hp0 * hpPow(s) * Math.exp(RULES.hpCurve * s * s) * (isBig(s) ? 1 + (RULES.bigHp - 1) * Math.min(1, s / 14) : 1))   // big bosses ramp in (no wall at the first one);
 const lootScale = (s) => capN(Math.pow(RULES.lootGrowth, s));
-// each boss has a weak and a resisted element (fixed per roster slot, shifted every cycle of 15)
+// bosses have NO elements: element choice is purely about your BUILD (levels, combos), HIGH QUALITY odds and dark chests
 const BOSS_N = 15;
-function bossEl(s) { if (s < 1) return null; const i = s % BOSS_N, c = Math.floor(s / BOSS_N); return { weak: ELEMENTS[(i * 2 + c) % 3], resist: ELEMENTS[(i * 2 + c + 1) % 3] }; }
+const bossEl = () => null;
 // 3 chests, one per element (shuffled); from stage `dark.from` one may be swapped for a DARK chest of a random element
 function rollOffer(rng, s = 0) {
   const els = [...ELEMENTS]; for (let i = 2; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [els[i], els[j]] = [els[j], els[i]]; }
-  const off = els.map((e) => ({ type: 'normal', element: e }));
+  const off = els.map((e) => ({ type: 'normal', element: e, hq: rng() < RULES.hq.chance }));
   if (s >= RULES.dark.from && rng() < RULES.dark.chance) off[Math.floor(rng() * 3)] = { type: 'dark', element: pick(rng, ELEMENTS) };
   return off;
 }
@@ -91,12 +98,12 @@ function mkRandom(el, rank, s, rng) { const k = rollKind(rng); return k === 'wea
 // open a chest: random kind + rarity. G (optional) supplies GREED (+1 rarity chance). noCurse: bonus chests never curse.
 function openChest(chest, rng, s = 0, G = null, noCurse = false, shift = 1) {
   const R = RULES, el = chest.element, dark = chest.type === 'dark';
-  if (G && !noCurse) G.inf = el;   // the strike this stage is infused with the chosen chest's element
   if (dark && !noCurse && rng() < R.dark.curse) return mkCurse(el, s, rng);
-  let rank = rollRank(s, rng, shift * (dark ? R.dark.shift : 1) * (isBig(s) ? R.bigRank : 1));
+  let rank = rollRank(s, rng, shift * (dark ? R.dark.shift : 1) * (chest.hq ? R.hq.shift : 1) * (isBig(s) ? R.bigRank : 1));
   let greedy = false;
   if (G && rank < 5 && rng() < stats(G.items).greed) { rank++; greedy = true; }
-  const it = mkRandom(el, rank, s, rng); if (greedy) it.greedy = true;
+  // the first chests of a run are always weapons (no run dies at stage 2 to three accessories)
+  const it = s < R.firstWeapons ? mkWeapon(el, rank, s, rng) : mkRandom(el, rank, s, rng); if (greedy) it.greedy = true;
   if (!dark && rng() < R.gem) it.gem = 1;
   return it;
 }
@@ -120,7 +127,7 @@ const gearList = (G) => G.items;
 const ofKind = (G, k) => G.items.filter((it) => it.kind === k);
 function elemLv(list) {
   const cnt = { Fire: 0, Ice: 0, Thunder: 0 }; list.forEach((it) => { if (!it.cursed && cnt[it.element] !== undefined) cnt[it.element]++; });   // curses never count
-  const lv = {}; ELEMENTS.forEach((e) => { lv[e] = RULES.elem.at.filter((k) => cnt[e] >= k).length; });
+  const lv = {}; ELEMENTS.forEach((e) => { lv[e] = Math.floor(cnt[e] / RULES.elem.step); });   // a new level every `step` items, no cap
   return { cnt, lv };
 }
 // every number a strike uses, from the active (non-sealed) gear list. Pure sums / products -> order-independent.
@@ -133,24 +140,32 @@ function stats(list) {
     if (it.stat === 'elemB') S.elemB[it.element] += it.val; else if (it.stat === 'glob') S.glob += it.val; else S[it.stat] += it.val;
   });
   S.execute = Math.min(RULES.caps.execute, S.execute); S.echo = Math.min(RULES.caps.echo, S.echo); S.greed = Math.min(RULES.caps.greed, S.greed);
-  S.burn = E.Fire.burn[lv.Fire]; S.burnT = E.Fire.ticks[lv.Fire] + (lv.Fire >= 3 ? Math.floor((cnt.Fire - 9) / 3) : 0);
-  S.vuln = E.Ice.vuln[lv.Ice]; S.critUp = E.Ice.crit[lv.Ice]; if (lv.Ice >= 3) S.critX += E.Ice.shatter;
-  S.chance = E.Thunder.chance[lv.Thunder]; S.chains = E.Thunder.chains[lv.Thunder]; S.bolt = E.Thunder.bolt; S.storm = lv.Thunder >= 3;
-  S.melt = lv.Fire >= 1 && lv.Ice >= 1; S.superconduct = lv.Ice >= 1 && lv.Thunder >= 1; S.overload = lv.Fire >= 1 && lv.Thunder >= 1;
-  if (S.melt) S.burn *= C.melt;
-  if (S.superconduct) S.critX *= C.superconduct;
+  const L3 = (x) => Math.min(3, x);
+  S.burn = E.Fire.burn[L3(lv.Fire)]; S.burnT = E.Fire.ticks[L3(lv.Fire)] + Math.max(0, lv.Fire - 3);
+  S.vuln = E.Ice.vuln[L3(lv.Ice)] * (lv.Ice > 3 ? 1 + 0.25 * (lv.Ice - 3) : 1); S.critUp = E.Ice.crit[L3(lv.Ice)]; if (lv.Ice >= 3) S.critX += E.Ice.shatter;
+  S.chance = E.Thunder.chance[L3(lv.Thunder)]; S.chains = E.Thunder.chains[L3(lv.Thunder)] + Math.max(0, lv.Thunder - 3); S.bolt = E.Thunder.bolt; S.storm = lv.Thunder >= 3;
+  // combo level = the lower of its two element levels (0 = off)
+  S.melt = Math.min(lv.Fire, lv.Ice); S.superconduct = Math.min(lv.Ice, lv.Thunder); S.overload = Math.min(lv.Fire, lv.Thunder);
+  const M = (l) => Math.pow(E.mastery, l);   // MASTERY: x per level of that element, compounding -> stacking one element snowballs
+  S.mastery = { Fire: M(lv.Fire), Ice: M(lv.Ice), Thunder: M(lv.Thunder) };
+  // combos grow with the lower level of their two elements
+  S.burn *= S.melt ? C.melt.base * Math.pow(C.melt.per, S.melt - 1) : 1;
+  S.critX *= S.superconduct ? C.superconduct.base * Math.pow(C.superconduct.per, S.superconduct - 1) : 1;
+  S.boom = S.overload ? C.overload.base * Math.pow(C.overload.per, S.overload - 1) : 0;
+  // RESONANCE: hits of a combo's two elements are x res^(combo Lv); a hit takes only its BEST combo (pairs, not spreading, win)
+  S.comboMul = { Fire: 1, Ice: 1, Thunder: 1 };
+  [['melt', 'Fire', 'Ice'], ['superconduct', 'Ice', 'Thunder'], ['overload', 'Fire', 'Thunder']].forEach(([k, a, b]) => {
+    const v = S[k] ? Math.pow(C.res, S[k]) : 1; S.comboMul[a] = Math.max(S.comboMul[a], v); S.comboMul[b] = Math.max(S.comboMul[b], v); });
   S.critX = Math.max(1, S.critX);
   return S;
 }
 const critOf = (it, S) => it && it.cursed ? 0 : Math.min(0.95, (it ? it.crit : RULES.hero.crit) + (it && it.element === 'Ice' ? S.critUp : 0));
 const isEl = (it, e) => !!it && !it.cursed && it.element === e;
-const elMul = (it, B) => !it || it.cursed || !B ? 1 : it.element === B.weak ? RULES.boss.weak : it.element === B.resist ? RULES.boss.resist : 1;
 function hitters(G) {
   const off = offEls(G), list = G.items.filter((it) => it.cursed || !off.includes(it.element));
   return { list, S: stats(list), weapons: list.filter((it) => it.kind === 'weapon') };
 }
-const infMul = (G, B) => !B || !G.inf ? 1 : G.inf === B.weak ? RULES.boss.infWeak : G.inf === B.resist ? RULES.boss.infResist : 1;
-const hitMul = (it, S, G, B) => (S.glob + G.perm) * (it && !it.cursed ? 1 + S.elemB[it.element] : 1) * S.vuln * weakMult(G) * elMul(it, B) * infMul(G, B);
+const hitMul = (it, S, G, B) => (S.glob + G.perm) * (it && !it.cursed ? (1 + S.elemB[it.element]) * S.mastery[it.element] * S.comboMul[it.element] : 1) * S.vuln * weakMult(G);
 // hero POWER: expected total damage of a strike vs boss B (curses included) - an expectation, not a guarantee
 function expStrike(G, B = null, s = 0) {
   const { S, weapons } = hitters(G), good = weapons.filter((w) => !w.cursed);
@@ -164,7 +179,7 @@ function expStrike(G, B = null, s = 0) {
     sum += v; if (isEl(it, 'Fire')) fire += v;
   });
   sum = Math.max(0, sum);
-  return capN(sum * (1 + (S.overload ? RULES.combos.overload : 0)) + Math.max(0, fire) * S.burn * S.burnT);
+  return capN(sum * (1 + S.boom) + Math.max(0, fire) * S.burn * S.burnT);
 }
 // the cursed item whose removal helps most
 function worstCurse(G) {
@@ -195,9 +210,9 @@ function computeDamage(G, rng, s = 0) {
     const v = capN(roll * hitMul(it, S, G, B) * cm * (crit ? S.critX : 1));
     const ch = rng && isEl(it, 'Thunder') && S.chance > 0 && rng() < S.chance ? S.chains : 0;
     const bc = S.storm && rng && rng() < critOf(it, S) ? S.critX : 1, cv = capN(v / (crit ? S.critX : 1) * S.bolt * ch * bc);
-    hits.push({ it, echo: !!(h0 && h0.echo), v, crit, chain: ch, cv, el: elMul(it, B) }); sum = capN(Math.max(0, sum + v + cv)); if (isEl(it, 'Fire')) fire = capN(fire + v); if (crit) crits++; if (ch) chained++;
+    hits.push({ it, echo: !!(h0 && h0.echo), v, crit, chain: ch, cv }); sum = capN(Math.max(0, sum + v + cv)); if (isEl(it, 'Fire')) fire = capN(fire + v); if (crit) crits++; if (ch) chained++;
   });
-  const boom = S.overload ? capN(sum * RULES.combos.overload) : 0;
+  const boom = S.boom ? capN(sum * S.boom) : 0;
   const tick = capN(fire * S.burn), ticks = S.burn > 0 ? Array.from({ length: S.burnT }, () => tick) : [];
   const burn = capN(tick * ticks.length), total = capN(sum + boom + burn);
   const executed = total < hp && S.execute > 0 && hp - total <= S.execute * hp;
@@ -205,6 +220,35 @@ function computeDamage(G, rng, s = 0) {
 }
 // after a kill: OVERKILL CONVERSION turns part of the overkill into a permanent damage bonus (capped per kill)
 function afterKill(G, r) { const S = r.S, q = r.total / r.hp; if (!(S.okConv > 0) || !(q > 1)) return 0; const g = S.okConv * Math.min(3, q - 1); G.perm += g; return g; }
+const nextAt = (lv) => (lv + 1) * RULES.elem.step;
+// ---- pick policies (balance sim + the debug jump) ----
+// build focus: a PAIR of elements (most items) -> its combo RESONANCE + both masteries; ties -> fixed order
+function focusEls(S) { return [...ELEMENTS].sort((a, b) => S.cnt[b] - S.cnt[a] || ELEMENTS.indexOf(a) - ELEMENTS.indexOf(b)).slice(0, 2); }
+// value of adding one item of element el: the lagging half of the pair >> the leading half >> the third element
+function buildValue(S, el) {
+  const n = S.cnt[el], nxt = nextAt(S.lv[el]), F = focusEls(S), tot = ELEMENTS.reduce((a, e) => a + S.cnt[e], 0);
+  if (tot < 2) return 0;
+  const o = F[0] === el ? F[1] : F[0];
+  let v = F.includes(el) ? (n <= S.cnt[o] ? 16 : 10) : -8;
+  v += Math.max(0, 6 - (nxt - n) * 2);
+  return v;
+}
+// smart: weighs survival this stage (expected damage with that chest's infusion + an average item) against build value,
+// HIGH QUALITY odds and dark-chest risk
+function smartPick(off, G, s, rng = Math.random) {
+  const S = stats(G.items), B = bossEl(s), hp = stageHp(s, G);
+  let best = null, bs = -1e9;
+  for (const c of off) {
+    const probe = mkWeapon(c.element, Math.min(5, rollRank(s, () => 0.5, (c.hq ? RULES.hq.shift : 1) * (c.type === 'dark' ? RULES.dark.shift : 1))), s, () => 0.5);
+    const g2 = { ...G, items: [...G.items, probe] }, q = expStrike(g2, B, s) / hp;
+    const P = RULES.smart;
+    let sc = buildValue(S, c.element) + (c.hq ? P.hq : 0) + Math.min(P.logCap, 2 * Math.log2(Math.max(0.01, q)));
+    if (q < P.tight) sc += P.w * (q - P.tight);   // survival first when it is tight
+    if (c.type === 'dark') sc += curses(G).length && !G.gems ? -25 : P.dark;
+    sc += rng() * 0.5; if (sc > bs) { bs = sc; best = c; }
+  }
+  return best;
+}
 // ===== END LOGIC =====
 
 // ===== CONTENT =====
@@ -259,10 +303,10 @@ const starStr = () => '';
 const elemCount = (items, el) => items.filter((i) => i.element === el).length;
 // element synergy text: [name + level line, effect line]
 function synLines(el, items) {
-  const Y = stats(items.filter((i) => !i.cursed || i.curse !== 'seal')), n = Y.cnt[el], lv = Y.lv[el], nx = RULES.elem.at[lv];
+  const Y = stats(items.filter((i) => !i.cursed || i.curse !== 'seal')), n = Y.cnt[el], lv = Y.lv[el], nx = nextAt(lv);
   const P = (x) => Math.round(x * 100);
   const fx = !lv ? t('synOff') : el === 'Fire' ? t('synFx').Fire(P(Y.burn), Y.burnT) : el === 'Ice' ? t('synFx').Ice(P(Y.vuln - 1), P(Y.critUp)) : t('synFx').Thunder(P(Y.chance), Y.chains);
-  return [`${elName(el)} ${t('syn')[el]} · ${t('synLv', n, lv, nx)}`, fx + (lv >= 3 ? ' · ' + t('lv3')[el] : '')];
+  return [`${elName(el)} ${t('syn')[el]} · ${t('synLv', n, lv, nx)}`, (lv ? `${elName(el)} ×${Y.mastery[el].toFixed(2)} · ` : '') + fx + (lv >= 3 ? ' · ' + t('lv3')[el] : '')];
 }
 const itemCol = (it) => it.cursed ? CURSE_COL : EL_COLOR[it.element];
 const RARITY = {
@@ -300,7 +344,7 @@ function bossFor(s) {
   const b = BOSSES[s % BOSSES.length], cyc = Math.floor(s / BOSSES.length), big = isBig(s);
   const k = Math.min(1.35, 1 + 0.07 * cyc) * (big ? 1.12 : 1);
   const scale = Math.min(b.scale * k, Math.max(b.scale, 330 / b.fh, 0), Math.max(b.scale, 600 / b.fw)), w = b.fw * scale;
-  const x = Math.round(Math.min(1180 - w / 2, Math.max(860, 760 + w / 2)));
+  const x = Math.round(Math.min(PLAY_R - w / 2, Math.max(760, 560 + w / 2)));   // right edge stays left of the stats panel
   const tint = cyc ? TIER_TINT[((cyc - 1) % (TIER_TINT.length - 1)) + 1] : null;
   return { ...b, scale, x, tint, cyc, big, idx: s % BOSSES.length };
 }
@@ -341,12 +385,15 @@ function fmt(n) {
 // ===== PHASER =====
 const W = 1200, H = 628;
 let FONT = fontFor(LANG);
+// FIXED HUD LAYOUT (same spot on every screen): POWER top-left, boss info top-centre, HERO STATS panel on the right,
+// play area (chests / hero vs boss) in between: x < PLAY_R
+const STAT_Y = 10, STAT_X = 1006, GEAR_X = 652, PLAY_R = 990, HPX = 600 - 3, HPW = 276;
 const LAVA_GROUND = 512;   // lava floor line of bg_lava drawn at 3x
 const PICK_GROUND = 542;   // top edge of the floor strip in bg_hoard (the hero stands on it on the pick screen)
 window.DC = { phase: 'boot', round: 0 };
 // test hook: DC.jump(20) starts stage 21 with gear built by 20 stages of picks
 window.DC.jump = (n, seed, scene, bare) => {
-  const g = window.game, R = jumpRun(n, seed); if (bare) R.G = newGear();
+  const g = window.game, R = jumpRun(n, seed); if (bare) R.G = newGear(R.G.seed);
   const act = g.scene.getScenes(true), key = scene || (isBig(n) ? 'intro' : 'pick');
   act.slice(1).forEach((sc) => sc.scene.stop());
   if (act[0]) act[0].scene.start(key, { run: R }); else g.scene.start(key, { run: R });
@@ -552,6 +599,7 @@ function hudCamera(scene) {
   const ev = Phaser.Scenes.Events.ADDED_TO_SCENE, f = (o) => { if (!o.__hud) ui.ignore(o); };
   scene.sys.events.on(ev, f); scene.sys.events.once('shutdown', () => scene.sys.events.off(ev, f));
 }
+function toHud(scene, objs) { objs.forEach((o) => { o.__hud = true; o.cameraFilter &= ~scene.uiCam.id; scene.cameras.main.ignore(o); }); }
 function powerHud(scene, v) {
   const D = 70, x = 12, y = 10, w = 216, h = 62, mk = (o) => { o.__hud = true; return o; };
   if (!scene.uiCam || !scene.cameras.cameras.includes(scene.uiCam)) hudCamera(scene);
@@ -615,19 +663,6 @@ function purifyFx(scene, it, x, y, depth = 60) {
   sfx(scene, 'rare', 0.7); window.DC.purifyFx = (window.DC.purifyFx || 0) + 1;
 }
 
-// the balance sim's 'smart' policy: all three elements to Lv1 (combos), then the nearest 3/6/9 threshold; take the boss weakness, avoid its resistance
-function smartPick(off, G, s, rng = Math.random) {
-  const S = stats(G.items), B = bossEl(s), allLv1 = ELEMENTS.every((e) => S.lv[e] >= 1); let best = null, bs = -1e9;
-  for (const c of off) {
-    const n = S.cnt[c.element]; let sc = 0;
-    if (!allLv1 && S.lv[c.element] === 0) sc += 20 - (3 - n) * 2;
-    const nxt = RULES.elem.at.find((k) => k > n); if (nxt) sc += Math.max(0, 8 - (nxt - n) * 2.5);
-    if (B && c.element === B.weak) sc += 30; if (B && c.element === B.resist) sc -= 30;
-    if (c.type === 'dark') sc += curses(G).length && !G.gems ? -30 : 5;
-    sc += rng(); if (sc > bs) { bs = sc; best = c; }
-  }
-  return best;
-}
 const executeLine = (G) => hitters(G).S.execute;
 // debug / screenshot: scale the strike so it ends just inside the execute line (adds an execute item if there is none)
 function forceExecute(r) {
@@ -637,32 +672,58 @@ function forceExecute(r) {
   r.executed = true; r.kill = true;
 }
 const chestKey = (c) => c.type === 'dark' ? 'black' : c.element;
-// boss weakness / resistance: [WEAK icon] [RESISTS icon], centred at x
-function weakResist(scene, x, y, B, size = 15, depth = 0) {
-  if (!B) return [];
-  const a = txt(scene, 0, y, t('weakT'), size, '#7aff8a', { strokeThickness: 4 }), b = txt(scene, 0, y, t('resistT'), size, '#ff8a7a', { strokeThickness: 4 });
-  const ia = scene.add.image(0, y, 'el_' + B.weak).setScale(size / 6), ib = scene.add.image(0, y, 'el_' + B.resist).setScale(size / 6);
-  const gap = 8, wI = ia.displayWidth, tot = a.width + gap / 2 + wI + 22 + b.width + gap / 2 + wI;
-  let cx = x - tot / 2;
-  a.setX(cx + a.width / 2); cx += a.width + gap / 2; ia.setX(cx + wI / 2); cx += wI + 22;
-  b.setX(cx + b.width / 2); cx += b.width + gap / 2; ib.setX(cx + wI / 2);
-  const o = [a, ia, b, ib]; if (depth) o.forEach((q) => q.setDepth(depth));
-  window.DC.bossEl = { weak: B.weak, resist: B.resist };
-  return o;
-}
-// NEXT boss preview (one stage ahead): name, BIG tag, weakness / resistance icons
+// NEXT boss preview (one stage ahead): name + BIG tag (bosses have no elements)
 function nextBossLine(scene, x, y, s, size = 14, depth = 0) {
-  const n = s + 1, B = bossEl(n), big = isBig(n);
-  const lab = txt(scene, 0, y, `${t('nextBoss')}: ${bossName(n)}${big ? ' · ' + t('bigBoss') : ''}`, size, big ? '#ffb08a' : '#c8b49a', { strokeThickness: 4, maxW: 380 });
-  const o = [lab]; let w = lab.displayWidth;
-  if (B) { const ia = scene.add.image(0, y, 'el_' + B.weak).setScale(size / 7), ib = scene.add.image(0, y, 'el_' + B.resist).setScale(size / 7);
-    const ta = txt(scene, 0, y, '+', size, '#7aff8a', { strokeThickness: 3 }), tb = txt(scene, 0, y, '−', size, '#ff8a7a', { strokeThickness: 3 });
-    o.push(ta, ia, tb, ib); w += 14 + ta.width + ia.displayWidth + 8 + tb.width + ib.displayWidth; }
-  let cx = x - w / 2; lab.setX(cx + lab.displayWidth / 2); cx += lab.displayWidth + 14;
-  for (let k = 1; k < o.length; k++) { const q = o[k], qw = q.displayWidth; q.setX(cx + qw / 2); cx += qw + (k === 2 ? 8 : 0); }
-  if (depth) o.forEach((q) => q.setDepth(depth));
-  window.DC.nextBoss = { name: bossName(n), big, weak: B && B.weak, resist: B && B.resist };
-  return o;
+  const n = s + 1, big = isBig(n);
+  const lab = txt(scene, x, y, `${t('nextBoss')}: ${bossName(n)}${big ? ' · ' + t('bigBoss') : ''}`, size, big ? '#ffb08a' : '#c8b49a', { strokeThickness: 4, maxW: 280 });
+  if (depth) lab.setDepth(depth);
+  window.DC.nextBoss = { name: bossName(n), big };
+  return [lab];
+}
+
+// ---- build readability: what the next element level gives, combo pairs, chest hints, level-up banners ----
+const COMBO_ELS = [['melt', 'Fire', 'Ice'], ['superconduct', 'Ice', 'Thunder'], ['overload', 'Fire', 'Thunder']];
+function elemLvFx(el, lv) {   // compact effect of element level lv (>= 1)
+  const E = RULES.elem, L3 = Math.min(3, lv), P = (x) => Math.round(x * 100);
+  if (el === 'Fire') return t('rw').Fire(P(E.Fire.burn[L3]), E.Fire.ticks[L3] + Math.max(0, lv - 3));
+  if (el === 'Ice') return t('rw').Ice(P(E.Ice.vuln[L3] * (lv > 3 ? 1 + 0.25 * (lv - 3) : 1) - 1), P(E.Ice.crit[L3]));
+  return t('rw').Thunder(P(E.Thunder.chance[L3]), E.Thunder.chains[L3] + Math.max(0, lv - 3));
+}
+const lvW = () => (LANG === 'pt' || LANG === 'es' ? 'Nv' : 'Lv');
+const lv3Name = (el) => String(t('lv3')[el]).split(/[:：]/)[0];
+const nextReward = (el, lv) => `${t('rwMast', RULES.elem.mastery)} · ${elemLvFx(el, lv + 1)}` + (lv + 1 === 3 ? ' · ' + lv3Name(el) : '');
+// what taking ONE more item of element el would do right now (chest hint): unlock / level a combo, or reach the next level
+function chestHint(G, el) {
+  const S = stats(G.items), n = S.cnt[el] + 1, lv2 = Math.floor(n / RULES.elem.step);
+  for (const [k, a, b] of COMBO_ELS) {
+    if (a !== el && b !== el) continue;
+    const o = a === el ? b : a, c2 = Math.min(lv2, S.lv[o]);
+    if (c2 > S[k]) return { text: S[k] ? t('comboUp', t('comboN')[k], c2) : t('hintCombo', t('comboN')[k]), combo: true };
+  }
+  if (lv2 > S.lv[el]) return { text: t('lvUp', elName(el), lv2), lv: true };
+  if (nextAt(S.lv[el]) - S.cnt[el] === 1) return { text: t('hintLv', S.lv[el] + 1) };
+  return null;
+}
+// level-ups / combo changes between two stats() snapshots -> banner lines [title, sub, colour]
+function buildUps(A, B) {
+  const out = [];
+  COMBO_ELS.forEach(([k]) => { if (B[k] > A[k]) out.push([A[k] ? t('comboUp', t('comboN')[k], B[k]) : t('comboUnl', t('comboN')[k]), `${t('rwMast', +Math.pow(RULES.combos.res, B[k]).toPrecision(3))} · ${t('cfx')[k](k === 'overload' ? Math.round(B.boom * 100) : k === 'melt' ? +(RULES.combos.melt.base * Math.pow(RULES.combos.melt.per, B[k] - 1)).toPrecision(3) : +(RULES.combos.superconduct.base * Math.pow(RULES.combos.superconduct.per, B[k] - 1)).toPrecision(3))}`, '#7aff8a']); });
+  ELEMENTS.forEach((el) => { if (B.lv[el] > A.lv[el]) out.push([t('lvUp', elName(el).toUpperCase(), B.lv[el]), `${t('rwMast', RULES.elem.mastery)} · ${elemLvFx(el, B.lv[el])}` + (B.lv[el] === 3 ? ' · ' + t('lv3')[el] : ''), EL_CSS[el]]); });
+  return out;
+}
+// big centred banner (over everything, readable on mobile), queued so two level-ups never overlap
+function buildBanner(scene, lines) {
+  if (!lines.length) return;
+  window.DC.buildBanner = (window.DC.buildBanner || []).concat(lines.map((l) => l[0]));
+  lines.forEach(([title, sub, col], i) => scene.time.delayedCall(i * 1500, () => {
+    const X = PLAY_R / 2 + 4, Y = 236, D = 700;   // above the GEAR popup (600)
+    const t1 = txt(scene, X, Y, title, 46, col, { strokeThickness: 10, stroke: '#1a0a04', maxW: 760 }).setDepth(D + 1);
+    const t2 = txt(scene, X, Y + 46, sub, 22, '#fff4d0', { strokeThickness: 6, stroke: '#1a0a04', maxW: 760 }).setDepth(D + 1);
+    const bw = Math.max(t1.displayWidth, t2.displayWidth) + 60, bg = scene.add.rectangle(X, Y + 22, bw, 112, 0x0a0410, 0.82).setStrokeStyle(3, Phaser.Display.Color.HexStringToColor(col).color).setDepth(D);
+    const all = [bg, t1, t2]; if (scene.uiCam) all.forEach((q) => scene.uiCam.ignore(q));
+    popText(scene, t1, 1); sfx(scene, 'banner', 0.45); burst(scene, X, Y, Phaser.Display.Color.HexStringToColor(col).color, 24, 260, 'px').setDepth(D + 2);
+    scene.tweens.add({ targets: all, alpha: 0, delay: 1350, duration: 350, onComplete: () => all.forEach((q) => q.destroy()) });
+  }));
 }
 // debug / screenshot hook: jump straight to stage n with a gear set built by playing n stages of smart-ish picks
 function jumpRun(n, seed) {
@@ -685,7 +746,7 @@ function jumpRun(n, seed) {
     }
     if (!dead) { window.DC.jumpTries = tries + 1; break; }
   }
-  R.s = n; R.G.seenN = R.G.items.length; R.G.inf = null;
+  R.s = n; R.G.seenN = R.G.items.length; 
   return R;
 }
 
@@ -794,9 +855,9 @@ class Pick extends Phaser.Scene {
     fadeInMain(this);
     backdrop(this, 'bg_hoard', 0.45);
     const big = isBig(s), c = bossFor(s);
-    this.G.inf = null; this.B = bossEl(s);   // no infusion until a chest is picked
+    this.B = bossEl(s);
     // centred top HUD: STAGE on the left, boss + HP bar + weakness / resistance on the right, NEXT boss preview below
-    panel(this, W / 2 - 300, 8, 600, 128, { border: big ? 0xff5a4a : undefined });
+    panel(this, W / 2 - 300, 8, 600, 112, { border: big ? 0xff5a4a : undefined });
     const st = txt(this, W / 2 - 165, big ? 42 : 58, t('stageN', s + 1), 44, '#ffd36a', { strokeThickness: 10, stroke: '#1a0a04', maxW: 250 });
     window.DC.roundText = st.text;
     if (big) {
@@ -808,12 +869,14 @@ class Pick extends Phaser.Scene {
     this.add.rectangle(W / 2 - 3, 60, 276, 18, 0xd22a2a).setOrigin(0, 0.5);
     this.hpT = txt(this, W / 2 + 135, 60, `HP ${fmt(stageHp(s, this.G))}`, 17, '#ffffff', { strokeThickness: 4 });
     if (hasCurse(this.G, 'hpUp')) this.add.rectangle(W / 2 + 135, 60, 280, 24).setStrokeStyle(3, 0xff5a3a);
-    this.elTags = weakResist(this, W / 2 + 135, 90, this.B, 15);
-    nextBossLine(this, W / 2, 120, s, 14);
+    nextBossLine(this, W / 2 + 135, 94, s, 14);
     this.prompt = txt(this, W / 2, 162, t('pickOne'), 38, '#ffffff', { strokeThickness: 8, maxW: 600 }).setAlpha(0);
     this.tip = new Tooltip(this, () => this.items);
     this.drawPower();
-    this.offer = rollOffer(Math.random, s); window.DC.offer = this.offer.map((o) => o.type === 'dark' ? 'dark:' + o.element : o.element);
+    this.offer = rollOffer(Math.random, s);
+    if (window.DC.forceHq) this.offer.forEach((o, i) => { if (o.type === 'normal') o.hq = window.DC.forceHq.includes(i); });   // test hook
+    window.DC.offer = this.offer.map((o) => (o.type === 'dark' ? 'dark:' + o.element : o.element) + (o.hq ? '+hq' : ''));
+    window.DC.hints = () => this.offer.map((o) => o.hint || null);
     const xs = [W / 2 - 270, W / 2, W / 2 + 270], base = 400;
     this.chests = this.offer.map((c, i) => {
       const x = xs[i];
@@ -826,24 +889,46 @@ class Pick extends Phaser.Scene {
       const gem = this.add.image(x, base - 205, 'el_' + c.element).setScale(4.2);
       this.tweens.add({ targets: gem, y: base - 213, yoyo: true, repeat: -1, duration: 700, ease: 'Sine.inOut' });
       const label = txt(this, x, base + 32, dark ? t('darkChest') : t('chestEl', elName(c.element)), 28, dark ? '#c9a6ff' : EL_CSS[c.element], { maxW: 250 });
-      // infusion: this stage's strike takes the chest's element -> show what it does against this boss
-      const iw = B && c.element === B.weak, ir = B && c.element === B.resist;
-      const el = txt(this, x, base + 64, dark ? elName(c.element) + (iw ? '  ·  ' + t('infWeakTag', RULES.boss.infWeak) : ir ? '  ·  ' + t('infResTag', RULES.boss.infResist) : '')
-        : iw ? t('infWeakTag', RULES.boss.infWeak) : ir ? t('infResTag', RULES.boss.infResist) : '·', iw || ir ? 22 : 18, iw ? '#7aff8a' : ir ? '#ff7a6a' : '#a89a8a', { maxW: 250 });
-      if (iw) this.tweens.add({ targets: el, scale: 1.08, yoyo: true, repeat: -1, duration: 500 });
+      // the chest shows just its element (a DARK chest names its element below)
+      // build hint when this chest's element would level up / unlock or level a combo ("Unlocks Melt!", "1 more to Lv2!")
+      const hint = chestHint(this.G, c.element);
+      const el = txt(this, x, base + 64, (dark ? elName(c.element) + (hint ? ' · ' : '') : '') + (hint ? hint.text : ''), 20, hint ? (hint.combo ? '#7aff8a' : '#ffe27a') : EL_CSS[c.element], { maxW: 250 });
+      if (hint) this.tweens.add({ targets: el, scale: 1.08, yoyo: true, repeat: -1, duration: 520, ease: 'Sine.inOut' });
+      c.hint = hint && hint.text;
       if (dark) { const bh = txt(this, x, base + 92, t('darkHint'), 15, '#d9a6ff', { strokeThickness: 4, maxW: 240 }); el.on('destroy', () => bh.destroy()); this.tweens.add({ targets: bh, alpha: 0.55, yoyo: true, repeat: -1, duration: 700 }); }
       const zone = this.add.zone(x, base - 80, 220, 300).setInteractive({ useHandCursor: true });
       zone.on('pointerdown', () => this.choose(i));
       zone.on('pointerover', () => { if (this.locked) return; this.tweens.add({ targets: spr, scale: 5.4, duration: 120 }); glow.setAlpha(0.45); });
       zone.on('pointerout', () => { if (this.locked) return; this.tweens.add({ targets: spr, scale: 5, duration: 120 }); glow.setAlpha(0.2); });
+      // HIGH QUALITY: better rarity odds (not a guarantee) -> a golden shimmer: rotating rays, gold sparkles, a light sweep on the chest
+      let hqO = [];
+      if (c.hq) {
+        const rays = this.add.graphics().setPosition(x, base - 60).setBlendMode(Phaser.BlendModes.ADD);
+        for (let k = 0; k < 10; k++) { const a0 = k * Math.PI / 5; rays.fillStyle(0xffe27a, 0.13); rays.slice(0, 0, 150, a0 - 0.13, a0 + 0.13); rays.fillPath(); }
+            rays.setDepth(0.2); this.tweens.add({ targets: rays, angle: 360, repeat: -1, duration: 9000 });
+        this.tweens.add({ targets: rays, alpha: 0.55, yoyo: true, repeat: -1, duration: 800, ease: 'Sine.inOut' });
+        const halo = this.add.circle(x, base - 60, 92, 0xffd84a, 0.18).setBlendMode(Phaser.BlendModes.ADD).setDepth(0.2);
+        this.tweens.add({ targets: halo, scale: 1.18, alpha: 0.3, yoyo: true, repeat: -1, duration: 650, ease: 'Sine.inOut' });
+        const shine = this.add.image(x, base + 12, 'chest_' + chestKey(c)).setScale(5).setOrigin(0.5, 1).setTintFill(0xfff4c0).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0);
+        this.tweens.add({ targets: shine, alpha: 0.28, yoyo: true, repeat: -1, duration: 520, repeatDelay: 900, ease: 'Sine.inOut' });
+        const gs = this.add.particles(x, base - 60, 'px', { x: { min: -95, max: 95 }, y: { min: -90, max: 60 }, lifespan: 700, speedY: { min: -40, max: -12 }, scale: { start: 2.2, end: 0 }, frequency: 70, tint: [0xffe27a, 0xffffff, 0xffc040], blendMode: 'ADD' });
+        const tag = txt(this, x, base - 150, t('hqTag'), 18, '#ffe27a', { strokeThickness: 5, stroke: '#4a2a00', maxW: 220 });
+        const pill = this.add.rectangle(x, base - 150, Math.min(230, tag.displayWidth + 26), 30, 0x3a2200, 0.85).setStrokeStyle(2, 0xffd84a);
+        tag.setDepth(2); pill.setDepth(1.9);
+        this.tweens.add({ targets: [tag, pill], scale: 1.07, yoyo: true, repeat: -1, duration: 600, ease: 'Sine.inOut' });
+        spr.setDepth(0.5); shine.setDepth(0.6);
+        hqO = [rays, halo, shine, gs, tag, pill];
+      }
       const sp = this.add.particles(x, base - 70, 'px', { x: { min: -60, max: 60 }, y: { min: -50, max: 40 }, lifespan: 900, speedY: { min: -30, max: -10 }, scale: { start: 1.5, end: 0 }, frequency: 260, tint: EL_COLOR[c.element], blendMode: 'ADD' });
       // drop in from above with a bounce; the rest of the chest UI fades in when it lands
-      spr.y = -120 - i * 60; [glow, gem, label, el].forEach((o) => o.setAlpha(0)); sp.stop();
+      spr.y = -120 - i * 60; [glow, gem, label, el].forEach((o) => o.setAlpha(0)); sp.stop(); hqO.forEach((o) => o.setVisible(false));
       this.tweens.add({ targets: spr, y: base + 12, duration: 460, delay: 80 + i * 80, ease: 'Bounce.out', onComplete: () => {
         sfx(this, 'open', 0.25); burst(this, x, base, 0xffe0a0, 8, 160, 'px'); sp.start();
         this.tweens.add({ targets: [gem, label, el], alpha: 1, duration: 160 }); glow.setAlpha(0.16);
+        hqO.forEach((o) => o.setVisible(true));
+        if (hqO.length) sfx(this, 'open', 0.18);
       } });
-      return { c, x, y: base - 80, spr, glow, gem, label, el, zone, sp };
+      return { c, x, y: base - 80, spr, glow, gem, label, el, zone, sp, hqO };
     });
     sfx(this, 'banner', 0.3);
     this.time.delayedCall(560, () => {
@@ -860,7 +945,7 @@ class Pick extends Phaser.Scene {
     this.heroS = this.add.sprite(hx, PICK_GROUND, 'hero_idle').setScale(2.4).setOrigin(0.5, 1).play('hero-idle'); heroGlow(this.heroS);
     this.heroS.setDepth(12); this.hShadow.setDepth(12);
     this.gemObjs = [];
-    this.statX = 1006; this.gx0 = 652;           // stats panel on the right; the GEAR list expands to its left
+    this.statX = STAT_X; this.gx0 = GEAR_X;           // stats panel on the right; the GEAR list expands to its left
     this.setupGearInput();
     this.powV = this.pw();
     this.gearOpen = false; this.inv = []; this.seenN = this.G.seenN || 0;
@@ -871,39 +956,73 @@ class Pick extends Phaser.Scene {
     (this.statObjs || []).forEach((o) => o.destroy()); const o = this.statObjs = [];
     if (this.statsHidden) return;
     const G = this.G, Y = stats(G.items), X = this.statX, Wd = 186, D = 14, add = (q) => { o.push(q.setDepth(D)); return q; };
-    const rows = [];   // POWER itself is the fixed HUD chip (top-left), always on screen
-    ELEMENTS.forEach((el) => { const lv = Y.lv[el], nx = RULES.elem.at[lv]; rows.push(['el' + el, elName(el), `${Y.cnt[el]}${nx ? '/' + nx : ''} · Lv${lv}`, lv ? '#ffffff' : EL_CSS[el], el]); });
-    ['melt', 'superconduct', 'overload'].forEach((k) => rows.push(['c_' + k, t('comboN')[k], Y[k] ? t('comboOn') : '—', Y[k] ? '#7aff8a' : '#6a5a7a', null, k]));
-    rows.push(['exec', t('stExec'), pct(Y.execute) + '%', Y.execute ? '#ff8ab0' : '#8a7a8a'], ['echo', t('stEcho'), pct(Y.echo) + '%', Y.echo ? '#ffffff' : '#8a7a8a'],
+    const T = (x, y, s, size, col, ox = 0) => add(this.add.text(x, y, s, { fontFamily: FONT, fontSize: size + 'px', color: col, fontStyle: 'bold', stroke: '#140812', strokeThickness: 3 }).setOrigin(ox, 0.5));
+    const stat = [['exec', t('stExec'), pct(Y.execute) + '%', Y.execute ? '#ff8ab0' : '#8a7a8a'], ['echo', t('stEcho'), pct(Y.echo) + '%', Y.echo ? '#ffffff' : '#8a7a8a'],
       ['greed', t('stGreed'), pct(Y.greed) + '%', Y.greed ? '#ffd84a' : '#8a7a8a'], ['perm', t('stPerm'), '+' + pct(G.perm) + '%', G.perm ? '#ffb0e0' : '#8a7a8a'],
-      ['curse', t('stCurses'), String(curses(G).length), curses(G).length ? '#ff6a9a' : '#8a7a8a'], ['gems', t('stGems'), String(G.gems), G.gems ? '#e0b8ff' : '#8a7a8a', null, null, 'gem']);
-    const rh = 24, y0 = 150, h = 62 + rows.length * rh;
-    add(panel(this, X, y0, Wd, h, { border: 0xffcf40, alpha: 0.88 }));
+      ['curse', t('stCurses'), String(curses(G).length), curses(G).length ? '#ff6a9a' : '#8a7a8a'], ['gems', t('stGems'), String(G.gems), G.gems ? '#e0b8ff' : '#8a7a8a', 'gem']];
+    const EH = 64, CH = 40, RH = 21, y0 = STAT_Y, h = 32 + 3 * EH + 8 + 3 * CH + 8 + stat.length * RH + 22;
+    add(panel(this, X, y0, Wd, h, { border: 0xffcf40, alpha: 0.9 }));
     // the whole panel: hover (desktop) peeks the full GEAR list, tap pins / unpins it
     const hit = add(this.add.rectangle(X + Wd / 2, y0 + h / 2, Wd, h, 0xffffff, 0.001).setInteractive({ useHandCursor: true }).setData('item', true));
     hit.on('pointerover', (p) => { if (!p.wasTouch && !this.statsLocked) { this.hoverPow = true; this.openGear(false); } });
     hit.on('pointerout', (p) => { if (!p.wasTouch) { this.hoverPow = false; this.maybeCloseGear(); } });
     hit.on('pointerdown', () => { if (this.statsLocked) return; if (this.gearOpen && this.gearPinned) this.closeGear(); else this.openGear(true); });
     this.statBox = { x: X, y: y0, w: Wd, h };
-    add(txt(this, X + Wd / 2, y0 + 18, t('statsT'), 16, '#ffd36a', { strokeThickness: 4, maxW: Wd - 12 }));
-    add(txt(this, X + Wd / 2, y0 + h - 14, t('gearTap'), 12, '#c8b49a', { strokeThickness: 3, maxW: Wd - 12 }));
+    add(txt(this, X + Wd / 2, y0 + 16, t('statsT'), 16, '#ffd36a', { strokeThickness: 4, maxW: Wd - 12 }));
+    add(txt(this, X + Wd / 2, y0 + h - 12, t('gearTap'), 12, '#c8b49a', { strokeThickness: 3, maxW: Wd - 12 }));
     const prev = G.statPrev || {}, cur = {};
-    rows.forEach(([key, label, val, col, el, combo, gem], i) => {
-      const y = y0 + 44 + i * rh, sep = i === 3 || i === 6;
-      if (sep) add(this.add.rectangle(X + Wd / 2, y - rh / 2, Wd - 16, 1, 0xffcf40, 0.3));
-      if (el) add(this.add.image(X + 16, y, 'el_' + el).setScale(1.5));
-      const lt = add(this.add.text(X + (el ? 28 : 10), y, label, { fontFamily: FONT, fontSize: '14px', color: combo ? col : '#e8dcc8', fontStyle: 'bold', stroke: '#140812', strokeThickness: 3 }).setOrigin(0, 0.5));
-      const vt = add(this.add.text(X + Wd - 10, y, val, { fontFamily: FONT, fontSize: key === 'power' ? '18px' : '14px', color: col, fontStyle: 'bold', stroke: '#140812', strokeThickness: 3 }).setOrigin(1, 0.5));
-      fitText(vt, 84, key === 'power' ? 18 : 14); fitText(lt, Wd - 22 - vt.displayWidth - (el ? 18 : 0), 14);
+    const flash = (key, val, y, hh, vt) => {
       cur[key] = val;
-      if (gem) { add(this.add.image(X + Wd - 26 - vt.displayWidth, y, 'gem').setScale(1.2)); this.tip.attach(add(this.add.rectangle(X + Wd / 2, y, Wd - 8, rh - 2, 0xffffff, 0.001).setData('row', true)), { kind: 'gem', rarity: 'EPIC', element: 'Ice', name: t('gemT') }); GEM_ROW.x = X + Wd - 16; GEM_ROW.y = y; }
-      if (el || combo) this.tip.attach(add(this.add.rectangle(X + Wd / 2, y, Wd - 8, rh - 2, 0xffffff, 0.001).setData('row', true)), el ? { kind: 'syn', element: el, rarity: 'RARE', name: t('syn')[el] } : { kind: 'combo', combo, on: Y[combo], rarity: Y[combo] ? 'LEGENDARY' : 'COMMON', element: 'Fire', name: t('comboN')[combo] });
-      if (prev[key] !== undefined && prev[key] !== val) { // changed since last shown: glow the row, pop the value
-        const hl = add(this.add.rectangle(X + Wd / 2, y, Wd - 8, rh - 2, 0xffd36a, 0.4)); hl.setDepth(D - 0.5);
-        this.tweens.add({ targets: hl, alpha: 0.08, yoyo: true, repeat: 2, duration: 380, onComplete: () => hl.setAlpha(0.14) });
-        vt.setScale(1.4); this.tweens.add({ targets: vt, scale: 1, duration: 320, ease: 'Back.out' });
-        window.DC.statChanged = (window.DC.statChanged || []).concat(key);
-      }
+      if (prev[key] === undefined || prev[key] === val) return;
+      const hl = add(this.add.rectangle(X + Wd / 2, y, Wd - 8, hh, 0xffd36a, 0.4)); hl.setDepth(D - 0.5);
+      this.tweens.add({ targets: hl, alpha: 0.08, yoyo: true, repeat: 2, duration: 380, onComplete: () => hl.setAlpha(0.14) });
+      if (vt) { vt.setScale(1.4); this.tweens.add({ targets: vt, scale: 1, duration: 320, ease: 'Back.out' }); }
+      window.DC.statChanged = (window.DC.statChanged || []).concat(key);
+    };
+    let y = y0 + 32;
+    // ELEMENTS: name + level, items toward the next level (bar), and what the NEXT level gives in plain words
+    ELEMENTS.forEach((el) => {
+      const lv = Y.lv[el], n = Y.cnt[el], nx = nextAt(lv), frac = Math.max(0, Math.min(1, (n - lv * RULES.elem.step) / RULES.elem.step));
+      add(this.add.image(X + 14, y + 8, 'el_' + el).setScale(1.5));
+      const lt = T(X + 26, y + 8, `${elName(el)} ${lvW()}${lv}`, 14, lv ? '#ffffff' : EL_CSS[el]);
+      const vt = T(X + Wd - 10, y + 8, `${n}/${nx}`, 14, EL_CSS[el], 1);
+      fitText(lt, Wd - 46 - vt.displayWidth, 14);
+      add(this.add.rectangle(X + 10, y + 21, Wd - 20, 6, 0x2a1a24).setOrigin(0, 0.5).setStrokeStyle(1, 0x5a4a50));
+      if (frac > 0) add(this.add.rectangle(X + 10, y + 21, (Wd - 20) * frac, 6, EL_COLOR[el]).setOrigin(0, 0.5));
+      // next level: "→ Lv2: dmg ×2" + the element effect it brings, on its own line (readable on phones)
+      const r1 = T(X + 10, y + 35, `→ ${lvW()}${lv + 1}: ${t('rwMast', RULES.elem.mastery)}` + (lv + 1 === 3 ? ' · ' + lv3Name(el) : ''), 13, '#ffe8a0');
+      const r2 = T(X + 22, y + 51, elemLvFx(el, lv + 1), 13, '#e8d8b0');
+      fitText(r1, Wd - 18, 13); fitText(r2, Wd - 30, 13);
+      this.tip.attach(add(this.add.rectangle(X + Wd / 2, y + 20, Wd - 8, EH - 4, 0xffffff, 0.001).setData('row', true)), { kind: 'syn', element: el, rarity: 'RARE', name: t('syn')[el] });
+      flash('el' + el, `${n}/${lv}`, y + 20, EH - 4, vt);
+      y += EH;
+    });
+    add(this.add.rectangle(X + Wd / 2, y - 2, Wd - 16, 1, 0xffcf40, 0.3)); y += 6;
+    // COMBOS: condition + effect ("Melt  [Fire]3+[Ice]3: dmg ×3"), greyed with "need N more" while locked
+    COMBO_ELS.forEach(([k, a, b]) => {
+      const lv = Y[k], L = Math.max(1, lv), need = RULES.elem.step * L, miss = lv ? 0 : Math.max(0, need - Y.cnt[a]) + Math.max(0, need - Y.cnt[b]);
+      const on = lv > 0, col = on ? '#7aff8a' : '#9a8a9a';
+      const lt = T(X + 10, y + 8, t('comboN')[k], 14, col);
+      const vt = T(X + Wd - 10, y + 8, on ? lvW() + lv : t('comboNeed', miss), on ? 14 : 12, on ? '#7aff8a' : '#ffb070', 1);
+      fitText(vt, 90, on ? 14 : 12); fitText(lt, Wd - 26 - vt.displayWidth, 14);
+      let cx = X + 10; const yy = y + 26, al = on ? 1 : 0.55;
+      const ia = add(this.add.image(cx + 6, yy, 'el_' + a).setScale(1.2).setAlpha(al)); cx += 14;
+      const ta = T(cx, yy, `${need}+`, 13, col); cx += ta.displayWidth + 1;
+      const ib = add(this.add.image(cx + 6, yy, 'el_' + b).setScale(1.2).setAlpha(al)); cx += 14;
+      const tb = T(cx, yy, `${need}: ${t('rwMast', +Math.pow(RULES.combos.res, L).toPrecision(3))}`, 13, on ? '#d8ffd8' : '#9a8a9a');
+      fitText(tb, X + Wd - 8 - cx, 13);
+      this.tip.attach(add(this.add.rectangle(X + Wd / 2, y + 16, Wd - 8, CH - 4, 0xffffff, 0.001).setData('row', true)), { kind: 'combo', combo: k, on: lv, rarity: on ? 'LEGENDARY' : 'COMMON', element: 'Fire', name: t('comboN')[k] });
+      flash('c_' + k, on ? 'Lv' + lv : 'off', y + 16, CH - 4, vt);
+      y += CH;
+    });
+    add(this.add.rectangle(X + Wd / 2, y - 2, Wd - 16, 1, 0xffcf40, 0.3)); y += 6;
+    stat.forEach(([key, label, val, col, gem]) => {
+      const yy = y + RH / 2 - 2;
+      const lt = T(X + 10, yy, label, 13, '#e8dcc8'), vt = T(X + Wd - 10, yy, val, 13, col, 1);
+      fitText(vt, 84, 13); fitText(lt, Wd - 24 - vt.displayWidth - (gem ? 16 : 0), 13);
+      if (gem) { add(this.add.image(X + Wd - 26 - vt.displayWidth, yy, 'gem').setScale(1.1)); this.tip.attach(add(this.add.rectangle(X + Wd / 2, yy, Wd - 8, RH - 2, 0xffffff, 0.001).setData('row', true)), { kind: 'gem', rarity: 'EPIC', element: 'Ice', name: t('gemT') }); GEM_ROW.x = X + Wd - 16; GEM_ROW.y = yy; }
+      flash(key, val, yy, RH - 2, vt);
+      y += RH;
     });
     G.statPrev = cur; window.DC.stats = cur;
   }
@@ -1048,19 +1167,13 @@ class Pick extends Phaser.Scene {
     const ch = this.chests[i];
     this.tweens.killTweensOf(this.prompt); this.tweens.add({ targets: this.prompt, alpha: 0, duration: 150 });
     window.DC.missed = [];
-    this.chests.forEach((o, j) => { o.zone.disableInteractive(); o.sp.stop(); if (j !== i) this.reject(o); });
+    this.chests.forEach((o, j) => { o.zone.disableInteractive(); o.sp.stop(); (o.hqO || []).forEach((q) => { this.tweens.killTweensOf(q); if (q.type === 'ParticleEmitter') q.stop(); this.tweens.add({ targets: q, alpha: 0, duration: 200 }); }); if (j !== i) this.reject(o); });
+    window.DC.pickedHq = !!ch.c.hq;
     sfx(this, 'click');
     const raw = this.forcedItem(ch) || openChest(ch.c, Math.random, this.s, this.G);
-    this.G.inf = ch.c.element;   // INFUSION: this stage's strike takes the chosen chest's element
-    window.DC.inf = { el: ch.c.element, mult: infMul(this.G, this.B) };
     const it = nameItem(raw);
     const tier = it.rarity, R = RARITY[tier], big = BIG_R[tier], leg = LEG_R[tier];
     window.DC.reveal = { rarity: tier, stage: 'anticipation' };
-    const im = infMul(this.G, this.B);
-    if (im !== 1) {
-      const il = txt(this, 130, 288, t('infPop', elName(ch.c.element), im), 24, im > 1 ? '#7aff8a' : '#ff7a6a', { strokeThickness: 6, maxW: 240 }).setDepth(41);
-      popText(this, il, 1); this.tweens.add({ targets: il, alpha: 0, y: il.y - 20, delay: 1400, duration: 400, onComplete: () => il.destroy() });
-    }
     this.tweens.killTweensOf([ch.spr, ch.glow]); ch.spr.setScale(5).setDepth(11); ch.glow.setDepth(11);
     // colour hint: the chest glow shifts to the rarity colour while it charges
     const hint = tier === 'COMMON' ? EL_COLOR[ch.c.element] : R.col;
@@ -1125,7 +1238,8 @@ class Pick extends Phaser.Scene {
     setTimeout(() => { if (this.tweens) { this.tweens.timeScale = 1; this.time.timeScale = 1; } }, ms);
   }
   reveal(ch, it) {
-    const ev = equip(this.G, it, this.s);
+    const pre = stats(this.G.items), ev = equip(this.G, it, this.s);
+    this.ups = buildUps(pre, stats(this.G.items));   // level-ups / combo unlocks -> big banner once the item lands
     const tier = it.rarity, R = RARITY[tier], big = BIG_R[tier], leg = LEG_R[tier];
     const lite = this.scale.displaySize.width < 700 ? 0.6 : 1; // fewer particles on small screens
     const N = (n) => Math.max(4, Math.round(n * lite));
@@ -1219,7 +1333,7 @@ class Pick extends Phaser.Scene {
       const t2 = txt(this, 0, 2, ruleText(it), 32, ruleCol(it), { maxW: 620 });
       const t3 = txt(this, 0, 38, ev.type === 'curse' ? `${evText(ev)}  ${t('curseNote')}` : it.kind === 'weapon' ? `${evText(ev)}  ·  ${t('wNote')}` : `${evText(ev)}  ·  ${t('noCrit')}`, 20, EV_CSS[ev.type], { strokeThickness: 4, maxW: 630 });
       card.add([pg, tag, t1, t2, t3]); card.setAlpha(0);
-      if (it.greedy) { const gt = txt(this, 250, -38, t('greedPop'), 15, '#ffd84a', { strokeThickness: 4, maxW: 150 }); card.add(gt); window.DC.greedy = (window.DC.greedy || 0) + 1; }
+      if (it.greedy) { const gt = txt(this, 250, -74, t('greedPop'), 16, '#ffd84a', { strokeThickness: 4, maxW: 150 }); card.add(gt); window.DC.greedy = (window.DC.greedy || 0) + 1; }
       this.tweens.add({ targets: card, alpha: 1, duration: 150 }); popText(this, card, 1);
     });
     // the item flies into the GEAR panel; merge / upgrade / salvage / curse animate there
@@ -1237,7 +1351,7 @@ class Pick extends Phaser.Scene {
     const fly = this.add.image(icon.x, icon.y, 'icons', it.frame).setScale(2).setDepth(40); if (it.cursed) fly.setTint(0xb070ff);
     this.tweens.add({ targets: fly, x: tx, y: ty, scale: 0.5, alpha: 0.3, duration: 420, ease: 'Quad.in', onComplete: () => {
       fly.destroy(); burst(this, tx, ty, col, N(20), 200, 'px').setDepth(40);
-      const lab = txt(this, this.statX + 93, 136, evText(ev), 22, EV_CSS[ev.type], { strokeThickness: 6, maxW: 240 }).setDepth(41);
+      const lab = txt(this, this.statX + 93, this.statBox ? this.statBox.y + this.statBox.h + 22 : 136, evText(ev), 22, EV_CSS[ev.type], { strokeThickness: 6, maxW: 240 }).setDepth(41);
       popText(this, lab, 1); sfx(this, ev.type === 'curse' ? 'curse' : 'tick', 0.55);
       this.tweens.add({ targets: lab, y: lab.y - 30, alpha: 0, delay: 1100, duration: 400, onComplete: () => lab.destroy() });
       const after = () => {
@@ -1246,6 +1360,7 @@ class Pick extends Phaser.Scene {
         this.setPower(this.pw()); this.drawStats();
       };
       after();
+      if (this.ups && this.ups.length) { buildBanner(this, this.ups); this.ups = null; }
       if (ev.gem) { // the gem pops out of the item and flies to its counter
         const g = this.add.image(icon.x, icon.y, 'gem').setScale(3).setDepth(42);
         const gl = txt(this, icon.x, icon.y - 60, t('evGem'), 22, EV_CSS.gem, { strokeThickness: 6, maxW: 300 }).setDepth(42);
@@ -1275,7 +1390,7 @@ class Pick extends Phaser.Scene {
 // Stage card for stage 1 and every BIG BOSS: who is next, how much HP, gear carried over (auto-continues fast)
 class Intro extends Phaser.Scene {
   constructor() { super('intro'); }
-  init(d) { this.run = d.run; this.s = this.run.s; this.gone = false; this.uiCam = null; }
+  init(d) { this.run = d.run; this.s = this.run.s; this.gone = false; this.uiCam = null; this.gearOpen = false; this.gearPinned = false; this.peekT = null; this.drag = null; this.statsHidden = false; this.statsLocked = false; }
   create() {
     const s = this.s, big = isBig(s), c = bossFor(s), G = this.run.G;
     window.DC.phase = 'intro'; window.DC.stage = s + 1;
@@ -1283,7 +1398,7 @@ class Intro extends Phaser.Scene {
     fadeInMain(this);
     backdrop(this, 'bg_lava', 0.55);
     this.add.image(W / 2, H / 2, 'vig').setDisplaySize(W + 40, H + 40).setAlpha(0.9);
-    const sc = Math.min(c.scale, 300 / c.fh, 520 / c.fw), bx = Math.min(1150 - c.fw * sc / 2, 870);
+    const sc = Math.min(c.scale, 300 / c.fh, 520 / c.fw), bx = Math.min(PLAY_R - c.fw * sc / 2, 820);
     shadow(this, bx + (c.body[0] - c.fw / 2) * sc, LAVA_GROUND, c.body[1] * sc * 1.05);
     const boss = this.add.sprite(bx + 260, LAVA_GROUND, c.tex).setScale(sc).setOrigin(0.5, 1).play(c.anim).setAlpha(0);
     if (c.tint) boss.setTint(c.tint);
@@ -1300,20 +1415,25 @@ class Intro extends Phaser.Scene {
     this.tweens.add({ targets: t2, alpha: 1, x: { from: 250, to: 330 }, duration: 380, delay: 200, ease: 'Quad.out' });
     const t3 = txt(this, 330, 296, `HP ${fmt(stageHp(s, G))}`, 40, '#ff5a4a'); t3.setAlpha(0);
     this.tweens.add({ targets: t3, alpha: 1, duration: 300, delay: 420 });
-    weakResist(this, 330, 334, bossEl(s), 18);
     txt(this, 330, 368, t('introLine'), 26, '#ffffff', { maxW: 600 });
-    powerHud(this, expStrike(G, bossEl(s), s));
+    // same fixed HUD as every other screen: POWER top-left, HERO STATS on the right (tap = full GEAR list)
+    this.G = G; this.tip = new Tooltip(this, () => gearList(G)); this.inv = []; this.gearOpen = false; this.statObjs = []; this.seenN = G.seenN = G.items.length;
+    this.statX = STAT_X; this.gx0 = GEAR_X; this.setupGearInput(); this.drawStats();
+    this.powN = powerHud(this, this.pw());
     const n = gearList(G).length;
     txt(this, 330, 404, n ? t('gearLine', n) : t('gear0'), 22, '#b8f0a0', { strokeThickness: 4, maxW: 600 });
     const tap = txt(this, 330, 520, t('tapCont'), 30, '#fff2c0', { maxW: 600 });
     this.tweens.add({ targets: tap, alpha: 0.35, yoyo: true, repeat: -1, duration: 600 });
     sfx(this, 'stage', 0.7); if (big) sfx(this, 'charge', 0.5);
     this.cameras.main.fadeIn(250, 0, 0, 0);
-    this.time.delayedCall(400, () => this.input.once('pointerdown', () => this.go()));
-    this.time.delayedCall(s ? 2600 : 3600, () => this.go());
+    this.time.delayedCall(400, () => this.input.on('pointerdown', (p, over) => { if (!this.gearOpen && !over.some((o) => o.getData && o.getData('item'))) this.go(); }));
+    this.time.delayedCall(s ? 2600 : 3600, () => this.go(true));
   }
-  go() {
-    if (this.gone) return; this.gone = true;
+  pw() { return expStrike(this.G, bossEl(this.s), this.s); }
+  go(auto) {
+    if (this.gone) return;
+    if (auto && (this.gearOpen || (this.tip && this.tip.visible))) { this.time.delayedCall(800, () => this.go(true)); return; }   // reading the gear: wait
+    this.gone = true;
     this.scene.start('pick', { run: this.run });
   }
 }
@@ -1337,9 +1457,8 @@ class Strike extends Phaser.Scene {
     const res = this.res = computeDamage(this.G, Math.random, s); // each item rolls inside its ATK range
     if (window.DC.forceExec) { window.DC.forceExec = false; forceExecute(res); } // screenshot / debug only
     res.ratio = res.total / this.hpMax; res.L = res.executed ? 1 : okLevel(res.total, this.hpMax); res.hp = this.hpMax;
-    res.inf = infMul(this.G, res.B);
     window.DC.result = { total: res.total, hp: this.hpMax, L: res.L, ratio: res.ratio, hits: res.hits.length, crits: res.crits, chained: res.chained, drains: res.hits.filter((h) => h.v < 0).length, weak: res.weak, vuln: res.S.vuln, burn: res.burn, ticks: res.ticks.length, off: res.off, power: expStrike(this.G, res.B, s), weaponCrits: res.hits.map((h) => (h.it ? h.it.crit : RULES.hero.crit)),
-      combo: res.combo, echoes: res.echoes, boom: res.boom, executed: res.executed, kill: res.kill, inf: res.inf, melt: res.S.melt, superconduct: res.S.superconduct, overload: res.S.overload, execLine: res.S.execute };
+      combo: res.combo, echoes: res.echoes, boom: res.boom, executed: res.executed, kill: res.kill, melt: res.S.melt, superconduct: res.S.superconduct, overload: res.S.overload, execLine: res.S.execute };
     this.tip = new Tooltip(this, () => this.items);
     const c = this.cfg;
     this.bShadow = shadow(this, c.x, LAVA_GROUND, c.body[1] * c.scale * 1.05);
@@ -1348,21 +1467,25 @@ class Strike extends Phaser.Scene {
     this.untint();
     this.hero = this.add.sprite(270, LAVA_GROUND, 'hero_idle').setScale(3).setOrigin(0.5, 1).play('hero-idle');
     heroGlow(this.hero);
-    panel(this, 640, 14, 440, 166, { border: c.big ? 0xff5a4a : undefined });
-    weakResist(this, 860, 158, bossEl(s), 15);
+    if (!this.uiCam || !this.cameras.cameras.includes(this.uiCam)) hudCamera(this);
+    const hud0 = this.children.list.length;   // boss info box: drawn by the UI camera -> same spot while the main camera zooms/shakes
+    panel(this, W / 2 - 300, 8, 600, 112, { border: c.big ? 0xff5a4a : undefined });
+    nextBossLine(this, W / 2 + 135, 94, s, 14);
     // execute line marker on the HP bar
-    if (this.execL0 = executeLine(this.G)) { const ex = 662 + 396 * this.execL0; this.add.rectangle(ex, 120, 3, 34, 0xff4a8a).setDepth(5); txt(this, ex, 98, t('execLine', pct(this.execL0)), 12, '#ff8ab0', { strokeThickness: 3 }).setDepth(5); }
-    txt(this, 860, 40, c.big ? `${t('stageN', s + 1)}  ·  ${t('bigBoss')}` : t('stageN', s + 1), 20, c.big ? '#ff8a6a' : '#ffd36a', { strokeThickness: 4, maxW: 400 });
-    txt(this, 860, 76, bossName(s), 30, c.col, { maxW: 410 });
-    this.add.rectangle(860, 120, 400, 28, 0x220000).setStrokeStyle(3, 0xffd36a);
-    this.hp = this.add.rectangle(662, 120, 396, 22, 0xd22a2a).setOrigin(0, 0.5);
-    this.hpText = txt(this, 860, 120, `${fmt(this.hpMax)} / ${fmt(this.hpMax)}`, 20);
+    const st = txt(this, W / 2 - 165, c.big ? 42 : 58, t('stageN', s + 1), 44, '#ffd36a', { strokeThickness: 10, stroke: '#1a0a04', maxW: 250 });
+    if (c.big) txt(this, W / 2 - 165, 88, t('bigBoss'), 22, '#ff6a5a', { strokeThickness: 6, stroke: '#2a0404', maxW: 250 });
+    txt(this, W / 2 + 135, 30, bossName(s), 22, c.col, { strokeThickness: 5, maxW: 300 });
+    this.add.rectangle(W / 2 + 135, 60, 280, 24, 0x220000).setStrokeStyle(3, 0xffd36a);
+    this.hp = this.add.rectangle(HPX, 60, HPW, 18, 0xd22a2a).setOrigin(0, 0.5);
+    this.hpText = txt(this, W / 2 + 135, 60, `${fmt(this.hpMax)} / ${fmt(this.hpMax)}`, 16, '#ffffff', { strokeThickness: 4, maxW: 270 });
+    if (this.execL0 = executeLine(this.G)) { const ex = HPX + HPW * this.execL0; this.add.rectangle(ex, 60, 3, 30, 0xff4a8a).setDepth(5); }   // EXECUTE line marker (the % is in HERO STATS)
+    toHud(this, this.bossHud = this.children.list.slice(hud0));
     this.dbObjs = [];
     // the compact stats panel (left) stays usable until STRIKE is pressed; tap / hover opens the full GEAR list beside it
-    this.statX = 12; this.gx0 = 222; this.inv = []; this.gearOpen = false; this.seenN = this.G.seenN = this.G.items.length; this.statObjs = [];
+    this.statX = STAT_X; this.gx0 = GEAR_X; this.inv = []; this.gearOpen = false; this.seenN = this.G.seenN = this.G.items.length; this.statObjs = [];
     this.powV = this.pw(); this.setupGearInput(); this.drawStats(); this.powN = powerHud(this, this.powV); this.setPower(this.powV, false);
-    this.ready = txt(this, 420, 190, t('ready', this.items.length), 28, '#ffffff', { maxW: 400 });
-    this.btn = button(this, 420, 262, t('strike'), () => this.strike(), 240);
+    this.ready = txt(this, 430, 200, t('ready', this.items.length), 28, '#ffffff', { maxW: 400 });
+    this.btn = button(this, 430, 272, t('strike'), () => this.strike(), 240);
     window.DC.phase = 'strike-ready';
   }
   // camera shake budget: crits share one rate limit (~1 per 400ms); punch() = the big finishing shake (never stacks closer than 400ms either)
@@ -1425,7 +1548,7 @@ class Strike extends Phaser.Scene {
     burst(this, hd.x, hd.y, 0xff5a2a, N(20), 280, 'px').setDepth(41);
     this.hitStop(90);
     // live damage counter (nothing is revealed before the blade lands)
-    const TX = this.TX = 420, TY = this.TY = 206;
+    const TX = this.TX = 430, TY = this.TY = 290;
     this.rays = this.add.image(TX, TY, 'rays').setTint(0xffd36a).setBlendMode(Phaser.BlendModes.ADD).setDepth(43).setScale(0).setAlpha(0);
     this.tweens.add({ targets: this.rays, angle: 360, duration: 6000, repeat: -1 });
     this.dmgLabel = txt(this, TX, TY - 66, t('damage'), 22, '#ffe8b0', { strokeThickness: 5 }).setDepth(46);
@@ -1437,7 +1560,6 @@ class Strike extends Phaser.Scene {
     // its own roll and its own crit), THUNDER chains on the hits that fork, and FIRE burn ticks last. The whole volley is
     // squeezed into ~3s: the cadence speeds up with more weapons and above 15 hits the pops are batched.
     const steps = [];
-    if (r.inf !== 1) steps.push({ kind: 'inf', v: r.inf, el: this.G.inf });
     r.off.forEach((el) => steps.push({ kind: 'seal', el }));
     if (r.weak < 1) steps.push({ kind: 'weak', v: r.weak });
     if (r.S.vuln > 1) steps.push({ kind: 'vuln', v: r.S.vuln });
@@ -1458,7 +1580,7 @@ class Strike extends Phaser.Scene {
       this.dmg.setText(fmt(v));
       const lim = Math.min(1.9, 440 / Math.max(1, this.dmg.width)); if (this.dmg.scaleX > lim) { this.dmg.setScale(lim); this.dmgScale = Math.min(this.dmgScale, lim); }
       const left = this.execd ? 0 : Math.max(0, this.hpMax - v);
-      this.hp.width = 396 * left / this.hpMax; this.hpText.setText(`${fmt(left)} / ${fmt(this.hpMax)}`);
+      this.hp.width = HPW * left / this.hpMax; this.hpText.setText(`${fmt(left)} / ${fmt(this.hpMax)}`);
       while (next <= L && v >= OK_TIERS[next].at * this.hpMax) { this.pulse(next, v); next++; }
     };
     // hit counter: "x37 HITS"
@@ -1478,7 +1600,7 @@ class Strike extends Phaser.Scene {
       const target = k === steps.length - 1 || steps[k + 1] && steps[k + 1].kind === 'exec' && k === steps.length - 2 ? r.total : capN(sum + burn);
       this.popNumber(s, k);
       window.DC.popped = k + 1;
-      const c = { v: shown }, gap = K === 'burn' ? 230 : K === 'hit' || K === 'batch' ? hitGap : K === 'boom' || K === 'melt' || K === 'inf' ? 420 : 230;
+      const c = { v: shown }, gap = K === 'burn' ? 230 : K === 'hit' || K === 'batch' ? hitGap : K === 'boom' || K === 'melt' ? 420 : 230;
       this.tweens.add({ targets: c, v: target, duration: gap * 0.8, ease: 'Cubic.out', onUpdate: () => show(c.v), onComplete: () => { shown = target; show(target); } });
       this.time.delayedCall(gap, () => runStep(k + 1));
     };
@@ -1503,9 +1625,8 @@ class Strike extends Phaser.Scene {
       label = (neg ? '−' + fmt(-v) : fmt(v)) + ` ×${s.hs.length}`; col = neg ? '#c890ff' : crit ? '#ffd23a' : '#ffffff'; size = crit ? 40 : 30;
     }
     else if (K === 'seal') { label = t('sealPop', elName(s.el)); col = '#c8a0ff'; size = 30; }
-    else if (K === 'inf') { label = t('infPop', elName(s.el), s.v); col = s.v > 1 ? '#7aff8a' : '#ff7a6a'; size = 38; }
     else if (K === 'boom') { label = t('overloadPop', fmt(s.v)); col = '#ffb04a'; size = 40; this.comboPop(t('comboN').overload + '!', '#ffb04a', 0xffa040); }
-    else if (K === 'melt') { this.comboPop(t('meltPop'), '#ff9a6a', 0xff7a3a); return; }
+    else if (K === 'melt') { this.comboPop(t('comboN').melt + ' ×' + +(RULES.combos.melt.base * Math.pow(RULES.combos.melt.per, Math.max(0, this.res.S.melt - 1))).toPrecision(3) + '!', '#ff9a6a', 0xff7a3a); return; }
     else if (K === 'weak') { label = t('cur').weak(P100(1 - s.v)); col = '#ff7a9a'; size = 32; }
     else if (K === 'vuln') { label = t('vulnPop', fmtX(s.v)); col = '#9ae8ff'; size = 40; }
     else { label = t('burnPop', fmt(s.v)) + (s.n > 1 ? ` ×${s.n}` : ''); col = '#ff9a4a'; size = 34; }
@@ -1533,7 +1654,7 @@ class Strike extends Phaser.Scene {
   // dual-element combo callout (MELT / SUPERCONDUCT / OVERLOAD): a banner under the hit counter
   comboPop(label, css, col) {
     const hd = this.head(), y = 236 + (this.comboN || 0) * 44; this.comboN = (this.comboN || 0) + 1;
-    const c = txt(this, Phaser.Math.Clamp(hd.x, 760, 1000), y, label, 34, css, { strokeThickness: 8, stroke: '#1a0804', maxW: 420 }).setDepth(48);
+    const c = txt(this, Phaser.Math.Clamp(hd.x, 640, 880), y + 20, label, 34, css, { strokeThickness: 8, stroke: '#1a0804', maxW: 420 }).setDepth(48);
     try { if (c.preFX) c.preFX.addGlow(col, 3, 0, false, 0.1, 8); } catch (e) {}
     popText(this, c, 1); sfx(this, 'banner', 0.5);
     this.tweens.add({ targets: c, alpha: 0, y: y - 20, delay: 1300, duration: 400, onComplete: () => c.destroy() });
@@ -1550,7 +1671,7 @@ class Strike extends Phaser.Scene {
       this.tweens.add({ targets: line, alpha: 0, duration: 500, onComplete: () => line.destroy() });
       this.hp.width = 0; this.hpText.setText(`0 / ${fmt(this.hpMax)}`);
     } });
-    const ex = txt(this, Phaser.Math.Clamp(hd.x, 760, 980), Math.max(250, hd.y - 110), t('execPop'), 64, '#ff4a7a', { strokeThickness: 12, stroke: '#2a0410', maxW: 520 }).setDepth(49);
+    const ex = txt(this, Phaser.Math.Clamp(hd.x, 640, 860), Math.max(250, hd.y - 110), t('execPop'), 64, '#ff4a7a', { strokeThickness: 12, stroke: '#2a0410', maxW: 520 }).setDepth(49);
     try { if (ex.preFX) ex.preFX.addGlow(0xff3a6a, 4, 0, false, 0.1, 10); } catch (e) {}
     popText(this, ex, 1); window.DC.executePopped = true;
     this.tweens.add({ targets: ex, alpha: 0, delay: 1500, duration: 400, onComplete: () => ex.destroy() });
@@ -1565,7 +1686,6 @@ class Strike extends Phaser.Scene {
       this.boss.setTint(0xff9a6a); this.time.delayedCall(120, () => this.untint()); return;
     }
     if (s.kind === 'seal' || s.kind === 'weak') { this.ring(hd.x, hd.y, CURSE_COL, 6, 4); return; }
-    if (s.kind === 'inf') { const c = EL_COLOR[s.el]; this.ring(hd.x, hd.y, c, 8, s.v > 1 ? 6 : 3); burst(this, hd.x, hd.y, c, N(s.v > 1 ? 30 : 12), 260, 'spark').setDepth(42); return; }
     if (s.kind === 'boom') { // OVERLOAD: fire + lightning explosion rings
       this.ring(hd.x, hd.y, 0xffa040, 12, 9); this.ring(hd.x, hd.y, 0xffe04a, 6, 12, 120);
       burst(this, hd.x, hd.y, 0xff7a2a, N(50), 420).setDepth(42); burst(this, hd.x, hd.y, 0xffe04a, N(30), 360, 'spark').setDepth(42);
@@ -1721,12 +1841,13 @@ class Strike extends Phaser.Scene {
     sfx(this, 'banner', 0.8); sfx(this, 'rare', 0.5);
     this.tweens.add({ targets: this.hero, x: 520, duration: 400 });
     const big = isBig(this.s);
-    const ban = txt(this, W / 2, 220, big ? t('milestone', this.s + 1) : t('stageClear', this.s + 1), 76, '#ffd36a', { strokeThickness: 12, stroke: '#4a2400', maxW: 1100 }).setDepth(60);
+    const ban = txt(this, PLAY_R / 2 + 4, 220, big ? t('milestone', this.s + 1) : t('stageClear', this.s + 1), 76, '#ffd36a', { strokeThickness: 12, stroke: '#4a2400', maxW: 940 }).setDepth(60);
+    this.statsHidden = false; this.statsLocked = false; this.drawStats();   // the swing is over: the panel is back in its spot
     if (big) milestoneJingle(this);
     try { if (ban.preFX) { ban.preFX.addShine(0.9, 0.35, 4); ban.preFX.addGlow(0xffcf40, 4, 0, false, 0.1, 10); } } catch (e) {}
     popText(this, ban, 1);
     const nxs = this.s + 1, nxb = isBig(nxs);
-    const sub = txt(this, W / 2, 300, (nxb ? t('bigBoss') + '!  ' : '') + t('next', bossName(nxs), fmt(stageHp(nxs, this.G))), 30, nxb ? '#ff9a7a' : '#ffffff', { maxW: 1000 }).setDepth(60); sub.setAlpha(0);
+    const sub = txt(this, PLAY_R / 2 + 4, 300, (nxb ? t('bigBoss') + '!  ' : '') + t('next', bossName(nxs), fmt(stageHp(nxs, this.G))), 30, nxb ? '#ff9a7a' : '#ffffff', { maxW: 940 }).setDepth(60); sub.setAlpha(0);
     this.tweens.add({ targets: sub, alpha: 1, duration: 300, delay: 300 });
     const coins = this.add.particles(0, -20, 'coin', { x: { min: 100, max: 1100 }, lifespan: 2000, speedY: { min: 120, max: 260 }, gravityY: 260, rotate: { min: 0, max: 360 }, scale: { min: 1.4, max: 2.2 }, frequency: 30 / this.lite() }).setDepth(59);
     this.time.delayedCall(1200, () => coins.stop());
@@ -1753,6 +1874,8 @@ class Strike extends Phaser.Scene {
     (this.clearTxt || []).forEach((o) => this.tweens.add({ targets: o, alpha: 0, duration: 250 }));
     const dimR = this.add.rectangle(-100, -100, W + 200, H + 200, 0x05030a, 1).setOrigin(0).setDepth(60.5).setAlpha(0);
     this.tweens.add({ targets: dimR, alpha: 0.55, duration: 300 });
+    // the (dead) boss's info box stays in its spot but dims under the modal reveal, so the reveal title reads clearly
+    (this.bossHud || []).forEach((o) => { if (o.active) this.tweens.add({ targets: o, alpha: o.alpha * 0.15, duration: 300 }); });
     const title = txt(this, X, 62, t('bonusTitle'), 40, '#ffd36a', { strokeThickness: 8, stroke: '#4a2400', maxW: 560 }).setDepth(62);
     popText(this, title, 1); sfx(this, 'banner', 0.7);
     const tier = txt(this, X, 100, t('bonusTier')[b.tier], 24, jack ? '#ffcf40' : b.tier === 'chest' ? '#d58cff' : '#e8dcff', { strokeThickness: 5, maxW: 560 }).setDepth(62);
@@ -1783,8 +1906,9 @@ class Strike extends Phaser.Scene {
         const cardBg = panel(this, X - 340, 352, 680, 172, { border: R.col, alpha: 0.95 }).setDepth(63).setAlpha(0);
         const rt = txt(this, X, 378, t('rar')[it.rarity], 20, R.css, { strokeThickness: 5, maxW: 600 }).setDepth(64).setAlpha(0);
         const nm = txt(this, X, 414, it.name, 30, it.cursed ? '#d9a6ff' : EL_CSS[it.element], { strokeThickness: 6, maxW: 640 }).setDepth(64).setAlpha(0);
-        const ev = equip(this.G, it, this.s);
+        const pre = stats(this.G.items), ev = equip(this.G, it, this.s), ups = buildUps(pre, stats(this.G.items));
         this.time.delayedCall(650, () => this.setPower(this.pw()));
+        if (ups.length) this.time.delayedCall(1300, () => buildBanner(this, ups));
         const rl = txt(this, X, 456, ruleText(it), 28, ruleCol(it), { strokeThickness: 6, maxW: 640 }).setDepth(64).setAlpha(0);
         this.tweens.add({ targets: [cardBg, rt, nm, rl], alpha: 1, duration: 200, delay: 200 }); popText(this, nm, 1);
         window.DC.bonusCard = { x: X, y: 438, name: it.name, rarity: it.rarity };
@@ -1875,7 +1999,7 @@ class Strike extends Phaser.Scene {
 }
 
 // the Strike scene's pre-swing moment reuses the pick screen's stats panel + GEAR list (one implementation)
-['drawStats', 'drawGems', 'setupGearInput', 'setPower', 'inPopup', 'openGear', 'maybeCloseGear', 'closeGear', 'renderGear', 'addInvRow', 'scrollTo', 'updateRowInput'].forEach((k) => { Strike.prototype[k] = Pick.prototype[k]; });
+['drawStats', 'drawGems', 'setupGearInput', 'setPower', 'inPopup', 'openGear', 'maybeCloseGear', 'closeGear', 'renderGear', 'addInvRow', 'scrollTo', 'updateRowInput'].forEach((k) => { Strike.prototype[k] = Pick.prototype[k]; Intro.prototype[k] = Pick.prototype[k]; });
 
 function startGame() {
   if (window.__dcStarted) return; window.__dcStarted = true;
