@@ -255,6 +255,13 @@ function fadeInMain(scene) {
   if (!window.__fadeMain) return; window.__fadeMain = false;
   const m = scene.sound.get('music'); if (m) scene.tweens.add({ targets: m, volume: MAIN_VOL, duration: 1200 });
 }
+// Soft, tinted, low-alpha flash (max 0.3), never repeated within 1.2s. Used only for a Legendary open and GODLIKE.
+function softFlash(scene, col, a = 0.25, dur = 240) {
+  const now = Date.now(); if (window.__lastFlash && now - window.__lastFlash < 1200) return; window.__lastFlash = now;
+  const r = scene.add.rectangle(-200, -200, W + 400, H + 400, col, 1).setOrigin(0).setScrollFactor(0).setDepth(900).setAlpha(Math.min(0.3, a));
+  scene.tweens.add({ targets: r, alpha: 0, duration: dur, ease: 'Quad.out', onComplete: () => r.destroy() });
+  window.DC.flashes = (window.DC.flashes || 0) + 1;
+}
 function heroGlow(spr) { try { if (spr.preFX) spr.preFX.addGlow(0xfff2b0, 3, 0, false, 0.1, 10); } catch (e) {} }
 
 class Boot extends Phaser.Scene {
@@ -493,10 +500,9 @@ class Pick extends Phaser.Scene {
       this.time.delayedCall(big ? 2600 : 1500, () => lin.stop()); this.time.delayedCall(big ? 4000 : 2800, () => lin.destroy());
     }
     // flash + shake
-    if (leg) { cam.flash(420, 255, 230, 140); cam.shake(650, 0.02); }
-    else if (tier === 'EPIC') { cam.flash(260, 220, 160, 255); cam.shake(380, 0.011); }
-    else if (tier === 'CURSED') { cam.flash(200, 120, 0, 160); cam.shake(300, R.shake); }
-    else if (tier === 'RARE') cam.flash(120, 140, 220, 255);
+    if (leg) { softFlash(this, 0xffe6a0, 0.25, 260); cam.shake(650, 0.02); }
+    else if (tier === 'EPIC') cam.shake(380, 0.011);
+    else if (tier === 'CURSED') cam.shake(300, R.shake);
     // legendary: coin + confetti shower
     if (leg) {
       const cols = [0xffcf40, 0xff5a8a, 0x5ad2ff, 0x8aff7a, 0xd58cff, 0xffffff];
@@ -683,7 +689,7 @@ class Strike extends Phaser.Scene {
     const L = r.L, cam = this.cameras.main, hd = this.head(), N = (n) => Math.max(4, Math.round(n * this.lite()));
     window.DC.head = hd;
     sfx(this, 'hit', 0.9);
-    cam.shake(300, 0.02); cam.flash(140, 255, 255, 255);
+    cam.shake(300, 0.02);
     this.boss.setTintFill(0xffffff); this.time.delayedCall(110, () => this.boss.clearTint());
     this.slash(hd.x, hd.y);
     burst(this, hd.x, hd.y, 0xffd36a, N(40), 380).setDepth(41);
@@ -743,7 +749,7 @@ class Strike extends Phaser.Scene {
     this.tweens.add({ targets: t, y: y - 90 - Phaser.Math.Between(0, 40), x: x + Phaser.Math.Between(-30, 30), alpha: { from: 1, to: 0 }, delay: 260, duration: 700, ease: 'Quad.in', onComplete: () => t.destroy() });
     // the boss flinches with every number
     const neg = s.kind === 'flat' && s.v < 0;
-    this.boss.setTintFill(neg ? 0x9a3aff : 0xffffff); this.time.delayedCall(60, () => this.boss.clearTint());
+    this.boss.setTint(neg ? 0xc090ff : 0xffd0b0); this.time.delayedCall(70, () => this.boss.clearTint());
     this.tweens.add({ targets: this.boss, x: this.cfg.x + (neg ? -4 : 6), yoyo: true, duration: 45 });
     burst(this, x, y, neg ? CURSE_COL : s.kind === 'mult' || s.kind === 'set' ? 0xffd84a : (s.it ? EL_COLOR[s.it.element] : 0xffffff), Math.max(4, Math.round((s.kind === 'set' ? 30 : 12) * this.lite())), 240, 'px').setDepth(43);
     sfx(this, neg ? 'curse' : s.kind === 'set' || s.kind === 'mult' ? 'banner' : 'tick', neg ? 0.35 : s.kind === 'set' ? 0.7 : 0.55);
@@ -774,9 +780,9 @@ class Strike extends Phaser.Scene {
     this.tweens.add({ targets: this.dmg, angle: { from: L % 2 ? -6 : 6, to: 0 }, duration: 260 });
     if (L === 1) { // HP hits zero
       sfx(this, 'hit', 1); sfx(this, 'banner', 0.5);
-      cam.shake(260, T.shake); cam.flash(120, 255, 240, 200);
+      cam.shake(260, T.shake);
       this.hp.setFillStyle(0xffffff); this.time.delayedCall(90, () => this.hp.setFillStyle(0xd22a2a));
-      this.boss.setTintFill(0xff3030); this.time.delayedCall(120, () => this.boss.clearTint());
+      this.boss.setTint(0xff6a5a); this.time.delayedCall(120, () => this.boss.clearTint());
       burst(this, hd.x, hd.y, T.col, N(40), 380).setDepth(41);
       return;
     }
@@ -784,17 +790,16 @@ class Strike extends Phaser.Scene {
     sfx(this, T.snd, 0.75 + 0.08 * L); if (L >= 3) sfx(this, 'hit', 1);
     this.hitStop(T.stop);
     cam.shake(380 + L * 140, T.shake);
-    const fc = Phaser.Display.Color.IntegerToColor(T.col);
-    cam.flash(90 + L * 40, L === 4 ? 255 : fc.red, L === 4 ? 255 : fc.green, L === 4 ? 255 : fc.blue);
+        if (L === 4) softFlash(this, T.col, 0.28, 240); // the only strike flash: soft, tinted, top tier
     cam.zoomTo(1.06 + 0.04 * L, 90, 'Quad.out', true);
     this.time.delayedCall(200, () => cam.zoomTo(1.06, 260, 'Sine.easeOut', true));
-    this.boss.setTintFill(0xffffff); this.time.delayedCall(80 + L * 30, () => this.boss.clearTint());
+    this.boss.setTint(0xffc0a0); this.time.delayedCall(80 + L * 30, () => this.boss.clearTint());
     this.tweens.add({ targets: this.boss, x: this.boss.x + 10 * L, yoyo: true, duration: 70, repeat: 1 });
     this.slash(hd.x, hd.y, 1 + 0.3 * (L - 1), T.col);
     for (let k = 0; k < L - 1; k++) this.ring(hd.x, hd.y, T.col, 8 - k * 2, 5 + k * 3 + L * 2, k * 120, 600);
     burst(this, hd.x, hd.y, T.col, N(40 * T.n), 300 + 120 * L).setDepth(41);
     burst(this, hd.x, hd.y, 0xffffff, N(20 * T.n), 500 + 80 * L, 'px').setDepth(41);
-    this.rays.setTint(T.col); this.tweens.add({ targets: this.rays, scale: 1.2 + 0.5 * L, alpha: 0.35 + 0.12 * L, duration: 260, ease: 'Back.out' });
+    this.rays.setTint(T.col); this.tweens.add({ targets: this.rays, scale: 1.2 + 0.5 * L, alpha: 0.25 + 0.08 * L, duration: 260, ease: 'Back.out' });
     // overkill label for this tier
     if (this.okT) this.okT.destroy();
     const ratio = Math.max(OK_TIERS[L].at, v / this.hpMax);
@@ -806,7 +811,7 @@ class Strike extends Phaser.Scene {
       for (let k = 0; k < 5; k++) {
         const b = this.add.image(hd.x + Phaser.Math.Between(-260, 260), LAVA_GROUND + 40, 'beam').setOrigin(0.5, 1).setTint(k % 2 ? 0xffffff : T.col)
           .setBlendMode(Phaser.BlendModes.ADD).setDepth(42).setScale(0.6, 1.4).setAlpha(0);
-        this.tweens.add({ targets: b, alpha: { from: 1, to: 0 }, scaleX: 0.1, duration: 600, delay: k * 70, onComplete: () => b.destroy() });
+        this.tweens.add({ targets: b, alpha: { from: 0.6, to: 0 }, scaleX: 0.1, duration: 600, delay: k * 70, onComplete: () => b.destroy() });
       }
     }
   }
@@ -856,14 +861,14 @@ class Strike extends Phaser.Scene {
     this.boss.stop();
     if (L >= 3) { // blown apart
       sfx(this, 'shatter', 0.9); sfx(this, L === 4 ? 'nuke' : 'boom', 0.8);
-      cam.flash(300, 255, 230, 160); cam.shake(700, 0.03);
+      cam.shake(700, 0.03);
       this.ring(hd.x, hd.y - 20, OK_TIERS[L].col, 14, 14, 0, 800);
       this.shatter(L === 4 ? 9 : 6, L === 4 ? 7 : 5, L === 4 ? 520 : 360);
       for (let k = 0; k < 3 + L; k++) this.time.delayedCall(k * 110, () => burst(this, hd.x + Phaser.Math.Between(-120, 120), hd.y + Phaser.Math.Between(-60, 80), k % 2 ? 0xff7a2a : OK_TIERS[L].col, N(40), 420).setDepth(41));
       window.DC.blownApart = true;
     } else { // falls / gets knocked back
       sfx(this, 'win');
-      cam.flash(300, 255, 230, 150); cam.shake(500, 0.02);
+      cam.shake(500, 0.02);
       for (let k = 0; k < 4; k++) this.time.delayedCall(k * 150, () => burst(this, hd.x - 40 + k * 50, LAVA_GROUND - 100, 0xffcf40, N(40), 380));
       this.boss.setTint(0x777777);
       if (L === 2) this.tweens.add({ targets: this.boss, x: this.boss.x + 180, angle: 18, alpha: 0, scaleY: this.cfg.scale * 0.8, duration: 900, ease: 'Cubic.in' });
@@ -911,7 +916,7 @@ class Strike extends Phaser.Scene {
           this.tweens.add({ targets: this.hero, x: m.x + 10, y: m.y + 40, scaleX: 0.3, scaleY: 0.3, angle: -200, alpha: 0, duration: 260, ease: 'Quad.in' });
           this.time.delayedCall(240, () => {
             sfx(this, 'lose'); sfx(this, 'hit', 0.6);
-            cam.shake(420, 0.03); cam.flash(160, 180, 0, 0);
+            cam.shake(420, 0.03);
             const chomp = txt(this, Phaser.Math.Clamp(m.x, 160, W - 160), m.y - 90, 'CHOMP!', 64, '#ff5a4a', { strokeThickness: 10 }).setDepth(50);
             chomp.setAngle(-8); popText(this, chomp, 1);
             burst(this, m.x, m.y + 20, 0xff3030, 40, 300, 'px');
