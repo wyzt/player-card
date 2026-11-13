@@ -12,6 +12,11 @@
 ## Font
 - Pixelify Sans (`assets/fonts/PixelifySans.ttf`), Copyright 2021 The Pixelify Sans Project Authors (https://github.com/eifetx/Pixelify-Sans), SIL Open Font License 1.1 - full licence text in `assets/fonts/OFL.txt`. Downloaded from https://github.com/google/fonts/tree/main/ofl/pixelifysans
 
+- Fusion Pixel Font 12px proportional (`assets/fonts/fusion-pixel-zh.woff2`, `-ja.woff2`, `-ko.woff2`; zh_hans / ja / ko builds, subset to only the glyphs used by the game's Chinese / Japanese / Korean text), Copyright TakWolf and contributors (https://github.com/TakWolf/fusion-pixel-font), SIL Open Font License 1.1 - licence in `assets/fonts/FusionPixel-OFL.txt`; it merges Ark Pixel, Cubic 11 and Galmuri glyphs, whose licences (OFL 1.1) are in `assets/fonts/fusion-licenses/`. Release v2026.11.10.
+
+## Localization
+UI, item names, damage rules, tooltips, banners and end screen in English, 简体中文, 日本語, 한국어, Português (BR) and Español (`i18n.js`). Auto-detected from the browser language (fallback English); the switcher on the title screen (top-right) cycles languages and saves the choice in localStorage.
+
 ## Audio (owned by the author, used under their pack licences; trimmed / re-encoded to mp3)
 | File | Source pack | Source file |
 |---|---|---|
