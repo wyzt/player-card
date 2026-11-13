@@ -175,6 +175,218 @@ es: {
 },
 /*</es>*/
 };
+// ===== v5 ENDLESS strings, merged over the blocks above =====
+const I18N5 = {
+/*<en>*/
+en: {
+  sub1: 'Endless bosses. Pick ONE chest, then strike ONCE.', sub2: 'Your gear grows forever. Kill them, or get eaten.',
+  stageN: (s) => `STAGE ${s}`, bigBoss: 'BIG BOSS', nextBig: 'BIG BOSS NEXT!',
+  bosses: ['TOXIC SHROOM', 'BOG TOAD', 'GROTTO VIPER', 'VENOM LIZARD', 'HELL HOUND', 'STORM ROC', 'WAILING WISP', 'FIRE SKULL', 'SHADOW REAPER', 'HELL BEAST', 'NIGHTMARE STEED', 'CAVE WYRM', 'SKY SERPENT', 'DEMON LORD', 'ANCIENT DRAGON'],
+  tiers: ['ELDER', 'ABYSSAL', 'COSMIC', 'ETERNAL', 'PRIMORDIAL'], bossTier: (p, n) => `${p} ${n}`,
+  introLine: 'Pick 1 chest, then strike ONCE.', gearLine: (n) => `${n} items equipped`, gear0: 'Your gear lives in fixed slots and upgrades itself.',
+  gearT: 'GEAR', cat: { weapon: 'WEAPONS', armor: 'ARMOR', accessory: 'ACCESSORIES' }, emptySlot: 'empty slot',
+  curseRow: (n, v) => `${n} curse${n > 1 ? 's' : ''}: ${v} ATK next strike`, salvLine: (p) => `Salvage bonus +${p}% damage`, salvPop: (p) => `+${p}% SALVAGE`,
+  evMerge: (n) => `★${n} MERGE! x2`, evUpgrade: 'UPGRADE!', evSalvage: (p) => `SALVAGED +${p}% DMG`, evCurse: 'CURSED! hurts your next strike', evEquip: 'EQUIPPED', evMax: '★MAX - salvaged',
+  ruleMult: (x) => `${x} total damage`, rar: { COMMON: 'COMMON', RARE: 'RARE', EPIC: 'EPIC', LEGENDARY: 'LEGENDARY', MYTHIC: 'MYTHIC', COSMIC: 'COSMIC', CURSED: 'CURSED' },
+  banMyth: 'MYTHIC!!!', banCos: 'COSMIC!!!!', ok: ['OVERKILL', 'MEGA OVERKILL', 'GODLIKE', 'ANNIHILATION'],
+  milestone: (s) => `MILESTONE: STAGE ${s}!`, ateBy: (b) => `${b} ATE YOU`,
+  reached: (s) => `Reached stage ${s}`, maxHit: (v) => `Max hit ${v}`, totalDmg: (v) => `Total damage ${v}`,
+  bestRec: (s, v) => `Best: stage ${s}  ·  hit ${v}`, newRec: 'NEW RECORD!', titleBest: (s, v) => `Best run: stage ${s}  ·  max hit ${v}`,
+  loseLine: 'Every pick matters. Go deeper.',
+},
+/*</en>*/
+/*<zh>*/
+zh: {
+  sub1: '无尽 Boss。选一个宝箱，然后只砍一刀。', sub2: '装备永远成长。砍死它们，或者被吃掉。',
+  stageN: (s) => `第 ${s} 关`, bigBoss: '大 BOSS', nextBig: '下一关：大 BOSS！',
+  bosses: ['毒蘑菇', '沼泽蟾蜍', '洞窟蝰蛇', '毒蜥蜴', '地狱犬', '风暴巨鸟', '哀嚎幽魂', '烈焰骷髅', '暗影死神', '地狱魔兽', '梦魇战马', '洞穴飞龙', '天空蛟龙', '恶魔领主', '远古巨龙'],
+  tiers: ['上古', '深渊', '宇宙', '永恒', '太初'], bossTier: (p, n) => `${p}·${n}`,
+  introLine: '选 1 个宝箱，然后只砍一刀。', gearLine: (n) => `已装备 ${n} 件`, gear0: '装备有固定栏位，会自动升级。',
+  gearT: '装备', cat: { weapon: '武器', armor: '防具', accessory: '饰品' }, emptySlot: '空栏位',
+  curseRow: (n, v) => `${n} 个诅咒：下一刀攻击 ${v}`, salvLine: (p) => `分解加成 伤害 +${p}%`, salvPop: (p) => `分解 +${p}%`,
+  evMerge: (n) => `★${n} 合成！x2`, evUpgrade: '升级！', evSalvage: (p) => `已分解 伤害 +${p}%`, evCurse: '诅咒！影响下一刀', evEquip: '已装备', evMax: '★满级 - 已分解',
+  ruleMult: (x) => `总伤害 ${x}`, rar: { COMMON: '普通', RARE: '稀有', EPIC: '史诗', LEGENDARY: '传说', MYTHIC: '神话', COSMIC: '宇宙', CURSED: '诅咒' },
+  banMyth: '神话！！！', banCos: '宇宙级！！！！', ok: ['溢出击杀', '超级溢出', '神之一击', '毁天灭地'],
+  milestone: (s) => `里程碑：第 ${s} 关！`, ateBy: (b) => `你被${b}吃掉了`,
+  reached: (s) => `到达第 ${s} 关`, maxHit: (v) => `最高一击 ${v}`, totalDmg: (v) => `总伤害 ${v}`,
+  bestRec: (s, v) => `最佳：第 ${s} 关  ·  一击 ${v}`, newRec: '新纪录！', titleBest: (s, v) => `最佳纪录：第 ${s} 关  ·  最高一击 ${v}`,
+  loseLine: '每次选择都很重要。再走远一点。',
+},
+/*</zh>*/
+/*<ja>*/
+ja: {
+  sub1: '終わりなきボス。宝箱を1つ選び、一撃で決めろ。', sub2: '装備は無限に成長する。倒すか、喰われるか。',
+  stageN: (s) => `ステージ ${s}`, bigBoss: 'ビッグボス', nextBig: '次はビッグボス！',
+  bosses: ['毒キノコ', '沼ガエル', '洞窟マムシ', '毒トカゲ', 'ヘルハウンド', '嵐の怪鳥', '嘆きの亡霊', '炎の髑髏', '影の死神', 'ヘルビースト', '悪夢の駿馬', '洞窟ワーム', '天空の蛇竜', '魔王', '古代竜'],
+  tiers: ['古の', '深淵の', '宇宙の', '永劫の', '原初の'], bossTier: (p, n) => `${p}${n}`,
+  introLine: '宝箱を1つ選び、一撃で決めろ。', gearLine: (n) => `装備 ${n}個`, gear0: '装備は固定スロット制、自動で強化される。',
+  gearT: '装備', cat: { weapon: '武器', armor: '防具', accessory: '装飾品' }, emptySlot: '空きスロット',
+  curseRow: (n, v) => `呪い${n}個：次の一撃 攻撃 ${v}`, salvLine: (p) => `分解ボーナス ダメージ +${p}%`, salvPop: (p) => `分解 +${p}%`,
+  evMerge: (n) => `★${n} 合成！x2`, evUpgrade: 'アップグレード！', evSalvage: (p) => `分解 ダメージ +${p}%`, evCurse: '呪い！次の一撃に影響', evEquip: '装備した', evMax: '★MAX - 分解',
+  ruleMult: (x) => `総ダメージ ${x}`, rar: { COMMON: 'コモン', RARE: 'レア', EPIC: 'エピック', LEGENDARY: 'レジェンド', MYTHIC: 'ミシック', COSMIC: 'コズミック', CURSED: '呪い' },
+  banMyth: 'ミシック！！！', banCos: 'コズミック！！！！', ok: ['オーバーキル', 'メガオーバーキル', '神の一撃', '殲滅'],
+  milestone: (s) => `節目：ステージ${s}！`, ateBy: (b) => `${b}に喰われた`,
+  reached: (s) => `到達：ステージ${s}`, maxHit: (v) => `最大ヒット ${v}`, totalDmg: (v) => `総ダメージ ${v}`,
+  bestRec: (s, v) => `ベスト：ステージ${s}  ·  ヒット ${v}`, newRec: '新記録！', titleBest: (s, v) => `ベスト：ステージ${s}  ·  最大ヒット ${v}`,
+  loseLine: '選択がすべて。もっと深くへ。',
+},
+/*</ja>*/
+/*<ko>*/
+ko: {
+  sub1: '끝없는 보스. 상자 하나를 고르고, 한 번만 베어라.', sub2: '장비는 끝없이 성장한다. 쓰러뜨리거나, 먹히거나.',
+  stageN: (s) => `스테이지 ${s}`, bigBoss: '빅 보스', nextBig: '다음은 빅 보스!',
+  bosses: ['독버섯', '늪 두꺼비', '동굴 독사', '독도마뱀', '헬하운드', '폭풍 괴조', '통곡의 망령', '화염 해골', '그림자 사신', '헬비스트', '악몽의 군마', '동굴 와이번', '하늘 뱀룡', '마왕', '고대 드래곤'],
+  tiers: ['고대의', '심연의', '우주의', '영겁의', '태초의'], bossTier: (p, n) => `${p} ${n}`,
+  introLine: '상자 1개를 고르고, 한 번만 베어라.', gearLine: (n) => `장비 ${n}개 장착`, gear0: '장비는 고정 슬롯, 자동으로 업그레이드된다.',
+  gearT: '장비', cat: { weapon: '무기', armor: '방어구', accessory: '장신구' }, emptySlot: '빈 슬롯',
+  curseRow: (n, v) => `저주 ${n}개: 다음 일격 공격력 ${v}`, salvLine: (p) => `분해 보너스 피해 +${p}%`, salvPop: (p) => `분해 +${p}%`,
+  evMerge: (n) => `★${n} 합성! x2`, evUpgrade: '업그레이드!', evSalvage: (p) => `분해 피해 +${p}%`, evCurse: '저주! 다음 일격에 영향', evEquip: '장착', evMax: '★MAX - 분해',
+  ruleMult: (x) => `총 피해 ${x}`, rar: { COMMON: '일반', RARE: '희귀', EPIC: '영웅', LEGENDARY: '전설', MYTHIC: '신화', COSMIC: '우주', CURSED: '저주' },
+  banMyth: '신화!!!', banCos: '우주급!!!!', ok: ['오버킬', '메가 오버킬', '신의 일격', '절멸'],
+  milestone: (s) => `이정표: 스테이지 ${s}!`, ateBy: (b) => `${b}에게 먹혔다`,
+  reached: (s) => `도달: 스테이지 ${s}`, maxHit: (v) => `최대 일격 ${v}`, totalDmg: (v) => `총 피해 ${v}`,
+  bestRec: (s, v) => `최고: 스테이지 ${s}  ·  일격 ${v}`, newRec: '신기록!', titleBest: (s, v) => `최고 기록: 스테이지 ${s}  ·  최대 일격 ${v}`,
+  loseLine: '모든 선택이 중요하다. 더 깊이.',
+},
+/*</ko>*/
+/*<pt>*/
+pt: {
+  sub1: 'Chefões sem fim. Escolha UM baú e golpeie UMA vez.', sub2: 'Seu equipamento cresce para sempre. Mate ou seja devorado.',
+  stageN: (s) => `FASE ${s}`, bigBoss: 'CHEFÃO', nextBig: 'PRÓXIMO: CHEFÃO!',
+  bosses: ['COGUMELO TÓXICO', 'SAPO DO PÂNTANO', 'VÍBORA DA GRUTA', 'LAGARTO VENENOSO', 'CÃO INFERNAL', 'ROCA DA TEMPESTADE', 'ALMA LAMENTOSA', 'CAVEIRA FLAMEJANTE', 'CEIFADOR SOMBRIO', 'FERA INFERNAL', 'CORCEL DO PESADELO', 'SERPE DA CAVERNA', 'SERPENTE CELESTE', 'SENHOR DEMÔNIO', 'DRAGÃO ANCESTRAL'],
+  tiers: ['MILENAR', 'ABISSAL', 'DO COSMOS', 'DA ETERNIDADE', 'PRIMORDIAL'], bossTier: (p, n) => `${n} ${p}`,
+  introLine: 'Escolha 1 baú e golpeie UMA vez.', gearLine: (n) => `${n} itens equipados`, gear0: 'Equipamento em espaços fixos que se melhoram sozinhos.',
+  gearT: 'EQUIPAMENTO', cat: { weapon: 'ARMAS', armor: 'ARMADURAS', accessory: 'ACESSÓRIOS' }, emptySlot: 'espaço vazio',
+  curseRow: (n, v) => `${n} maldição${n > 1 ? 'ões' : ''}: ${v} ATQ no próximo golpe`, salvLine: (p) => `Bônus de sucata +${p}% dano`, salvPop: (p) => `+${p}% SUCATA`,
+  evMerge: (n) => `★${n} FUSÃO! x2`, evUpgrade: 'MELHORIA!', evSalvage: (p) => `SUCATA +${p}% DANO`, evCurse: 'MALDIÇÃO! afeta o próximo golpe', evEquip: 'EQUIPADO', evMax: '★MÁX - virou sucata',
+  ruleMult: (x) => `${x} dano total`, rar: { COMMON: 'COMUM', RARE: 'RARO', EPIC: 'ÉPICO', LEGENDARY: 'LENDÁRIO', MYTHIC: 'MÍTICO', COSMIC: 'CÓSMICO', CURSED: 'MALDITO' },
+  banMyth: 'MÍTICO!!!', banCos: 'CÓSMICO!!!!', ok: ['OVERKILL', 'MEGA OVERKILL', 'DIVINO', 'ANIQUILAÇÃO'],
+  milestone: (s) => `MARCO: FASE ${s}!`, ateBy: (b) => `${b} TE DEVOROU`,
+  reached: (s) => `Chegou à fase ${s}`, maxHit: (v) => `Maior golpe ${v}`, totalDmg: (v) => `Dano total ${v}`,
+  bestRec: (s, v) => `Recorde: fase ${s}  ·  golpe ${v}`, newRec: 'NOVO RECORDE!', titleBest: (s, v) => `Recorde: fase ${s}  ·  maior golpe ${v}`,
+  loseLine: 'Cada escolha conta. Vá mais fundo.',
+},
+/*</pt>*/
+/*<es>*/
+es: {
+  sub1: 'Jefes sin fin. Elige UN cofre y golpea UNA vez.', sub2: 'Tu equipo crece para siempre. Mátalos o te devoran.',
+  stageN: (s) => `FASE ${s}`, bigBoss: 'GRAN JEFE', nextBig: '¡SIGUE UN GRAN JEFE!',
+  bosses: ['SETA TÓXICA', 'SAPO DEL PANTANO', 'VÍBORA DE LA GRUTA', 'LAGARTO VENENOSO', 'SABUESO INFERNAL', 'ROC DE LA TORMENTA', 'ALMA EN PENA', 'CALAVERA ÍGNEA', 'SEGADOR SOMBRÍO', 'BESTIA INFERNAL', 'CORCEL DE PESADILLA', 'SIERPE DE LA CAVERNA', 'SERPIENTE CELESTE', 'SEÑOR DEMONIO', 'DRAGÓN ANCESTRAL'],
+  tiers: ['DE ANTAÑO', 'ABISAL', 'DEL COSMOS', 'DE LA ETERNIDAD', 'PRIMORDIAL'], bossTier: (p, n) => `${n} ${p}`,
+  introLine: 'Elige 1 cofre y golpea UNA vez.', gearLine: (n) => `${n} objetos equipados`, gear0: 'Tu equipo va en ranuras fijas y se mejora solo.',
+  gearT: 'EQUIPO', cat: { weapon: 'ARMAS', armor: 'ARMADURAS', accessory: 'ACCESORIOS' }, emptySlot: 'ranura vacía',
+  curseRow: (n, v) => `${n} maldición${n > 1 ? 'es' : ''}: ${v} ATQ el próximo golpe`, salvLine: (p) => `Bono de chatarra +${p}% daño`, salvPop: (p) => `+${p}% CHATARRA`,
+  evMerge: (n) => `¡★${n} FUSIÓN! x2`, evUpgrade: '¡MEJORA!', evSalvage: (p) => `CHATARRA +${p}% DAÑO`, evCurse: '¡MALDICIÓN! afecta al próximo golpe', evEquip: 'EQUIPADO', evMax: '★MÁX - a chatarra',
+  ruleMult: (x) => `${x} daño total`, rar: { COMMON: 'COMÚN', RARE: 'RARO', EPIC: 'ÉPICO', LEGENDARY: 'LEGENDARIO', MYTHIC: 'MÍTICO', COSMIC: 'CÓSMICO', CURSED: 'MALDITO' },
+  banMyth: '¡¡¡MÍTICO!!!', banCos: '¡¡¡¡CÓSMICO!!!!', ok: ['OVERKILL', 'MEGA OVERKILL', 'DIVINO', 'ANIQUILACIÓN'],
+  milestone: (s) => `¡HITO: FASE ${s}!`, ateBy: (b) => `${b} TE DEVORÓ`,
+  reached: (s) => `Llegaste a la fase ${s}`, maxHit: (v) => `Golpe máximo ${v}`, totalDmg: (v) => `Daño total ${v}`,
+  bestRec: (s, v) => `Récord: fase ${s}  ·  golpe ${v}`, newRec: '¡NUEVO RÉCORD!', titleBest: (s, v) => `Récord: fase ${s}  ·  golpe máx. ${v}`,
+  loseLine: 'Cada elección cuenta. Llega más lejos.',
+},
+/*</es>*/
+};
+for (const l of LANGS) Object.assign(I18N[l], I18N5[l]);
+// ===== v5 curses (debuffs) + element synergies =====
+const I18N6 = {
+/*<en>*/
+en: {
+  power: 'POWER', gearTap: 'hover / tap: gear',
+  blackHint: 'GAMBLE: big loot or a CURSE', curseT: 'CURSES',
+  curseRule: (n, k) => `CURSE: ${n} for ${k} stages. No item, no slot.`,
+  db: { weak: 'WEAKNESS', elem: 'ELEMENT SEAL', minroll: 'DULL EDGE', hp: 'BOSS FURY', rarity: 'BAD LUCK' },
+  dbDesc: { weak: 'All your damage x0.5', elem: 'Your {el} items do nothing', minroll: 'Weapons & armor roll their minimum', hp: 'Boss HP +50%', rarity: 'Chests roll one rarity lower' },
+  dbLeft: (n) => `${n} stage${n > 1 ? 's' : ''} left`, evCurse: (n) => `CURSED: ${n}!`,
+  syn: { Fire: 'BURN', Ice: 'FROSTBITE', Thunder: 'CHAIN' },
+  synDesc: { Fire: 'Burn: the hit keeps burning for extra damage (steady)', Ice: 'Frostbite: boss takes more from everything, more crits', Thunder: 'Chain: a chance for a huge chain crit (swingy)' },
+  synLv: (n, lv, nx) => `${n} items · Lv${lv}` + (nx ? ` (next Lv at ${nx})` : ' (MAX)'),
+  synFx: { Fire: (p) => `burn +${p}% of the hit`, Ice: (p, c) => `+${p}% damage taken · crit ${c}%`, Thunder: (c, x) => `${c}% chance: chain ×${x}` },
+  synOff: 'no bonus yet (needs 2 items)',
+  critPop: 'CRIT ×2!', chainPop: (x) => `CHAIN ×${x}!`, burnPop: (v) => `BURN +${v}`, vulnPop: (x) => `FROSTBITE ${x}`, weakPop: 'WEAKNESS ×0.5', sealPop: (el) => `${el} SEALED`,
+},
+/*</en>*/
+/*<zh>*/
+zh: {
+  power: '战斗力', gearTap: '悬停/点击查看装备',
+  blackHint: '赌博：大奖或诅咒', curseT: '诅咒',
+  curseRule: (n, k) => `诅咒：${n}，持续 ${k} 关。不给装备，不占栏位。`,
+  db: { weak: '虚弱', elem: '元素封印', minroll: '钝刃', hp: 'Boss 狂暴', rarity: '霉运' },
+  dbDesc: { weak: '你的全部伤害 x0.5', elem: '你的{el}装备完全无效', minroll: '武器和防具只出最低值', hp: 'Boss 生命 +50%', rarity: '宝箱稀有度降一级' },
+  dbLeft: (n) => `剩余 ${n} 关`, evCurse: (n) => `被诅咒：${n}！`,
+  syn: { Fire: '灼烧', Ice: '冻伤', Thunder: '连锁' },
+  synDesc: { Fire: '灼烧：命中后持续燃烧造成额外伤害（稳定）', Ice: '冻伤：Boss 承受的所有伤害提高，暴击更多', Thunder: '连锁：有几率触发巨额连锁暴击（波动大）' },
+  synLv: (n, lv, nx) => `${n} 件 · ${lv} 级` + (nx ? `（${nx} 件升级）` : '（满级）'),
+  synFx: { Fire: (p) => `灼烧 +${p}% 命中伤害`, Ice: (p, c) => `承伤 +${p}% · 暴击率 ${c}%`, Thunder: (c, x) => `${c}% 几率：连锁 ×${x}` },
+  synOff: '暂无加成（需要 2 件）',
+  critPop: '暴击 ×2！', chainPop: (x) => `连锁 ×${x}！`, burnPop: (v) => `灼烧 +${v}`, vulnPop: (x) => `冻伤 ${x}`, weakPop: '虚弱 ×0.5', sealPop: (el) => `${el}被封印`,
+},
+/*</zh>*/
+/*<ja>*/
+ja: {
+  power: '戦闘力', gearTap: 'ホバー/タップで装備',
+  blackHint: 'ギャンブル：大当たりか呪いか', curseT: '呪い',
+  curseRule: (n, k) => `呪い：${n}（${k}ステージ）。装備なし、枠も使わない。`,
+  db: { weak: '衰弱', elem: '属性封印', minroll: 'なまくら', hp: 'ボス激昂', rarity: '不運' },
+  dbDesc: { weak: '与ダメージすべて x0.5', elem: '{el}の装備が無効になる', minroll: '武器と防具は最低値しか出ない', hp: 'ボスHP +50%', rarity: '宝箱のレア度が1段階下がる' },
+  dbLeft: (n) => `残り${n}ステージ`, evCurse: (n) => `呪われた：${n}！`,
+  syn: { Fire: '炎上', Ice: '凍傷', Thunder: '連鎖' },
+  synDesc: { Fire: '炎上：命中後も燃え続けて追加ダメージ（安定）', Ice: '凍傷：ボスの被ダメージ上昇、会心が増える', Thunder: '連鎖：確率で超大型の連鎖会心（ブレ大）' },
+  synLv: (n, lv, nx) => `${n}個 · Lv${lv}` + (nx ? `（${nx}個で次Lv）` : '（MAX）'),
+  synFx: { Fire: (p) => `炎上 +${p}%（命中ダメージ比）`, Ice: (p, c) => `被ダメ +${p}% · 会心率 ${c}%`, Thunder: (c, x) => `${c}%で連鎖 ×${x}` },
+  synOff: 'ボーナスなし（2個必要）',
+  critPop: '会心 ×2！', chainPop: (x) => `連鎖 ×${x}！`, burnPop: (v) => `炎上 +${v}`, vulnPop: (x) => `凍傷 ${x}`, weakPop: '衰弱 ×0.5', sealPop: (el) => `${el}封印`,
+},
+/*</ja>*/
+/*<ko>*/
+ko: {
+  power: '전투력', gearTap: '호버/탭: 장비 보기',
+  blackHint: '도박: 대박 아니면 저주', curseT: '저주',
+  curseRule: (n, k) => `저주: ${n}, ${k} 스테이지 동안. 장비 없음, 슬롯 없음.`,
+  db: { weak: '쇠약', elem: '속성 봉인', minroll: '무딘 칼날', hp: '보스 분노', rarity: '불운' },
+  dbDesc: { weak: '모든 피해 x0.5', elem: '{el} 장비가 아무 효과 없음', minroll: '무기와 방어구가 최저치만 나옴', hp: '보스 HP +50%', rarity: '상자 희귀도 한 단계 하락' },
+  dbLeft: (n) => `${n} 스테이지 남음`, evCurse: (n) => `저주: ${n}!`,
+  syn: { Fire: '화상', Ice: '동상', Thunder: '연쇄' },
+  synDesc: { Fire: '화상: 적중 후 계속 불타 추가 피해 (안정적)', Ice: '동상: 보스가 받는 모든 피해 증가, 치명타 증가', Thunder: '연쇄: 확률로 거대한 연쇄 치명타 (변동 큼)' },
+  synLv: (n, lv, nx) => `${n}개 · Lv${lv}` + (nx ? ` (${nx}개에 다음 Lv)` : ' (MAX)'),
+  synFx: { Fire: (p) => `화상 +${p}% (적중 피해 대비)`, Ice: (p, c) => `받는 피해 +${p}% · 치명타 ${c}%`, Thunder: (c, x) => `${c}% 확률: 연쇄 ×${x}` },
+  synOff: '보너스 없음 (2개 필요)',
+  critPop: '치명타 ×2!', chainPop: (x) => `연쇄 ×${x}!`, burnPop: (v) => `화상 +${v}`, vulnPop: (x) => `동상 ${x}`, weakPop: '쇠약 ×0.5', sealPop: (el) => `${el} 봉인`,
+},
+/*</ko>*/
+/*<pt>*/
+pt: {
+  power: 'PODER', gearTap: 'passe/toque: equipamento',
+  blackHint: 'APOSTA: saque enorme ou MALDIÇÃO', curseT: 'MALDIÇÕES',
+  curseRule: (n, k) => `MALDIÇÃO: ${n} por ${k} fases. Sem item, sem espaço.`,
+  db: { weak: 'FRAQUEZA', elem: 'SELO ELEMENTAL', minroll: 'LÂMINA CEGA', hp: 'FÚRIA DO CHEFE', rarity: 'AZAR' },
+  dbDesc: { weak: 'Todo o seu dano x0,5', elem: 'Seus itens de {el} não fazem nada', minroll: 'Armas e armaduras rolam o mínimo', hp: 'Vida do chefe +50%', rarity: 'Baús rolam uma raridade abaixo' },
+  dbLeft: (n) => `faltam ${n} fase${n > 1 ? 's' : ''}`, evCurse: (n) => `AMALDIÇOADO: ${n}!`,
+  syn: { Fire: 'QUEIMADURA', Ice: 'CONGELAMENTO', Thunder: 'CORRENTE' },
+  synDesc: { Fire: 'Queimadura: o golpe continua queimando (dano estável)', Ice: 'Congelamento: o chefe sofre mais de tudo, mais críticos', Thunder: 'Corrente: chance de um crítico em corrente enorme (instável)' },
+  synLv: (n, lv, nx) => `${n} itens · Nv${lv}` + (nx ? ` (próximo Nv com ${nx})` : ' (MÁX)'),
+  synFx: { Fire: (p) => `queima +${p}% do golpe`, Ice: (p, c) => `+${p}% dano sofrido · crítico ${c}%`, Thunder: (c, x) => `${c}% de chance: corrente ×${x}` },
+  synOff: 'sem bônus ainda (precisa de 2 itens)',
+  critPop: 'CRÍTICO ×2!', chainPop: (x) => `CORRENTE ×${x}!`, burnPop: (v) => `QUEIMA +${v}`, vulnPop: (x) => `CONGELA ${x}`, weakPop: 'FRAQUEZA ×0,5', sealPop: (el) => `${el} SELADO`,
+},
+/*</pt>*/
+/*<es>*/
+es: {
+  power: 'PODER', gearTap: 'pasa/toca: equipo',
+  blackHint: 'APUESTA: botín enorme o MALDICIÓN', curseT: 'MALDICIONES',
+  curseRule: (n, k) => `MALDICIÓN: ${n} durante ${k} fases. Sin objeto, sin ranura.`,
+  db: { weak: 'DEBILIDAD', elem: 'SELLO ELEMENTAL', minroll: 'FILO ROMO', hp: 'FURIA DEL JEFE', rarity: 'MALA SUERTE' },
+  dbDesc: { weak: 'Todo tu daño x0,5', elem: 'Tus objetos de {el} no hacen nada', minroll: 'Armas y armaduras sacan el mínimo', hp: 'Vida del jefe +50%', rarity: 'Los cofres salen una rareza más baja' },
+  dbLeft: (n) => `quedan ${n} fase${n > 1 ? 's' : ''}`, evCurse: (n) => `¡MALDITO: ${n}!`,
+  syn: { Fire: 'QUEMADURA', Ice: 'CONGELACIÓN', Thunder: 'CADENA' },
+  synDesc: { Fire: 'Quemadura: el golpe sigue ardiendo (daño constante)', Ice: 'Congelación: el jefe recibe más de todo, más críticos', Thunder: 'Cadena: probabilidad de un crítico en cadena enorme (variable)' },
+  synLv: (n, lv, nx) => `${n} objetos · Nv${lv}` + (nx ? ` (siguiente Nv con ${nx})` : ' (MÁX)'),
+  synFx: { Fire: (p) => `quema +${p}% del golpe`, Ice: (p, c) => `+${p}% daño recibido · crítico ${c}%`, Thunder: (c, x) => `${c}% de probabilidad: cadena ×${x}` },
+  synOff: 'sin bono aún (necesita 2 objetos)',
+  critPop: '¡CRÍTICO ×2!', chainPop: (x) => `¡CADENA ×${x}!`, burnPop: (v) => `QUEMA +${v}`, vulnPop: (x) => `CONGELA ${x}`, weakPop: 'DEBILIDAD ×0,5', sealPop: (el) => `${el} SELLADO`,
+},
+/*</es>*/
+};
+for (const l of LANGS) Object.assign(I18N[l], I18N6[l]);
 const NOUN_KEYS = ['Sword', 'Dagger', 'Mace', 'Bow', 'Axe', 'Blade', 'Staff', 'Spear', 'Armor', 'Boots', 'Helm', 'Amulet', 'Ring', 'Pendant', 'Medal', 'Talisman', 'Relic', 'Idol', 'Grimoire', 'Shard'];
 const CJK_FONT = { zh: 'FusionZH', ja: 'FusionJA', ko: 'FusionKO' };
 function detectLang() {
@@ -190,7 +402,7 @@ function loadLangFont(lang) {
   if (!document.fonts || !document.fonts.load) return Promise.resolve();
   const f = CJK_FONT[lang]; const sample = { zh: '屠龙', ja: 'ドラ', ko: '드래' }[lang];
   const ps = ['700 32px "Pixelify Sans"', '400 16px "Pixelify Sans"'].map((x) => document.fonts.load(x));
-  ps.push(document.fonts.load('700 32px "PixelDigits"', '0123456789'));
+  ps.push(document.fonts.load('700 32px "PixelDigits"', '0123456789\uE000\uE001\uE002\uE003\uE004'));
   if (f) ps.push(document.fonts.load(`16px "${f}"`, sample));
   return Promise.race([Promise.all(ps), new Promise((r) => setTimeout(r, 3000))]);
 }
