@@ -184,11 +184,13 @@ function detectLang() {
   return 'en';
 }
 let LANG = detectLang();
-function fontFor(lang) { return CJK_FONT[lang] ? `"Pixelify Sans", "${CJK_FONT[lang]}", sans-serif` : '"Pixelify Sans", "Trebuchet MS", sans-serif'; }
+// "PixelDigits" only covers 0-9 (unicode-range), so numbers get clean blocky digits where 2/3/5/8 never look alike
+function fontFor(lang) { return CJK_FONT[lang] ? `"PixelDigits", "Pixelify Sans", "${CJK_FONT[lang]}", sans-serif` : '"PixelDigits", "Pixelify Sans", "Trebuchet MS", sans-serif'; }
 function loadLangFont(lang) {
   if (!document.fonts || !document.fonts.load) return Promise.resolve();
   const f = CJK_FONT[lang]; const sample = { zh: '屠龙', ja: 'ドラ', ko: '드래' }[lang];
   const ps = ['700 32px "Pixelify Sans"', '400 16px "Pixelify Sans"'].map((x) => document.fonts.load(x));
+  ps.push(document.fonts.load('700 32px "PixelDigits"', '0123456789'));
   if (f) ps.push(document.fonts.load(`16px "${f}"`, sample));
   return Promise.race([Promise.all(ps), new Promise((r) => setTimeout(r, 3000))]);
 }

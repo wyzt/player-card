@@ -12,6 +12,7 @@
 ## Font
 - Pixelify Sans (`assets/fonts/PixelifySans.ttf`), Copyright 2021 The Pixelify Sans Project Authors (https://github.com/eifetx/Pixelify-Sans), SIL Open Font License 1.1 - full licence text in `assets/fonts/OFL.txt`. Downloaded from https://github.com/google/fonts/tree/main/ofl/pixelifysans
 
+- Digits 0-9 (`assets/fonts/pixel-digits.woff2`, CSS family "PixelDigits", unicode-range U+0030-0039): a digits-only subset of Press Start 2P, Copyright 2012 The Press Start 2P Project Authors (cody@zone38.net), SIL Open Font License 1.1 - licence in `assets/fonts/OFL-PressStart2P.txt`. Downloaded from https://github.com/google/fonts/tree/main/ofl/pressstart2p; renamed "PixelDigits" for the modified (subset) version as the OFL Reserved Font Name requires. Used so 2 / 3 / 5 / 8 stay distinct at every scale.
 - Fusion Pixel Font 12px proportional (`assets/fonts/fusion-pixel-zh.woff2`, `-ja.woff2`, `-ko.woff2`; zh_hans / ja / ko builds, subset to only the glyphs used by the game's Chinese / Japanese / Korean text), Copyright TakWolf and contributors (https://github.com/TakWolf/fusion-pixel-font), SIL Open Font License 1.1 - licence in `assets/fonts/FusionPixel-OFL.txt`; it merges Ark Pixel, Cubic 11 and Galmuri glyphs, whose licences (OFL 1.1) are in `assets/fonts/fusion-licenses/`. Release v2026.11.10.
 
 ## Localization

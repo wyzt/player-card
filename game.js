@@ -128,6 +128,9 @@ let FONT = fontFor(LANG);
 const LAVA_GROUND = 512;   // lava floor line of bg_lava drawn at 3x
 window.DC = { phase: 'boot', round: 0 };
 
+const TEXT_RES = 2;
+(() => { const F = Phaser.GameObjects.GameObjectFactory.prototype, mk = F.text; // crisp text: render at 2x, sample LINEAR so FIT scaling never drops pixel rows from glyphs
+  F.text = function (...a) { const o = mk.apply(this, a); try { o.setResolution(TEXT_RES); o.texture.setFilter(Phaser.Textures.FilterMode.LINEAR); } catch (e) {} return o; }; })();
 function txt(scene, x, y, s, size, color = '#ffffff', extra = {}) {
   const { maxW, ...st } = extra;
   const o = scene.add.text(x, y, s, Object.assign({ fontFamily: FONT, fontSize: size + 'px', color, fontStyle: 'bold', stroke: '#140812', strokeThickness: Math.max(4, Math.round(size / 7)), align: 'center' }, st)).setOrigin(0.5);
@@ -209,6 +212,7 @@ class Tooltip {
   show(it, obj) {
     const sc = this.scene, items = this.getItems(), R = RARITY[it.rarity];
     this.c.removeAll(true); this.cur = it;
+    this.unhl(); if (obj.getData('row')) { obj.setFillStyle(0xffe6a0, 0.14).setStrokeStyle(2, 0xffd36a, 0.75); this.hl = obj; }
     const w = 470, lines = [
       [it.name, 26, it.kind === 'cursed' ? '#d9a6ff' : EL_CSS[it.element]],
       [`${t('rar')[it.rarity]} · ${t('kind')[it.kind]} · ${elName(it.element)}`, 19, R.css],
@@ -233,7 +237,8 @@ class Tooltip {
     this.c.setScale(k).setPosition(x, ty).setScrollFactor(0).setVisible(true);
     window.DC.tooltip = { name: it.name, rule: ruleText(it), x, y: ty, w: sw, h: sh };
   }
-  hide(force) { if (force) this.pinned = false; this.c.setVisible(false); this.cur = null; window.DC.tooltip = null; }
+  unhl() { if (this.hl && this.hl.active) this.hl.setFillStyle(0xffffff, 0.001).setStrokeStyle(); this.hl = null; }
+  hide(force) { if (force) this.pinned = false; this.c.setVisible(false); this.cur = null; this.unhl(); window.DC.tooltip = null; }
 }
 // canvas-drawn light textures for the reveal FX (no image assets)
 function makeFxTextures(scene) {
@@ -387,15 +392,20 @@ class Pick extends Phaser.Scene {
     fadeInMain(this);
     backdrop(this, 'bg_hoard', 0.45);
     const st = RULES.stages[this.stage], k = this.round % RULES.picksPerStage;
-    panel(this, 170, 12, 520, 98);
-    txt(this, 430, 40, t('stageRound', this.stage + 1, RULES.stages.length, k + 1, RULES.picksPerStage), 32, '#ffd36a', { maxW: 490 });
-    // round pips: done / current / upcoming pick-1-of-3 rounds in this stage
+    panel(this, 170, 8, 520, 112);
+    // big ROUND k/m (digits large + thick outline so 2/3/8 never blur together), stage on the side
+    const rt = txt(this, 318, 44, t('round', k + 1, RULES.picksPerStage), 44, '#ffd36a', { strokeThickness: 10, stroke: '#1a0a04', maxW: 270 });
+    window.DC.roundText = rt.text;
+    txt(this, 574, 30, t('stage', this.stage + 1, RULES.stages.length), 22, '#ffffff', { strokeThickness: 6, maxW: 200 });
+    txt(this, 574, 58, t('boss')[this.stage], 18, this.stage === 2 ? '#ff8a5a' : '#f0c8ff', { strokeThickness: 5, maxW: 200 });
+    // round pips: filled = done, big pulsing gold = this round, hollow = still to come (readable without the digits)
     for (let r = 0; r < RULES.picksPerStage; r++) {
-      const px = 206 + r * 30, done = r < k, cur = r === k;
-      const pip = this.add.circle(px, 82, 9, done ? 0x8aff7a : cur ? 0xffd36a : 0x3a2a4a).setStrokeStyle(2, 0x140812);
-      if (cur) this.tweens.add({ targets: pip, scale: 1.3, yoyo: true, repeat: -1, duration: 380 });
+      const px = 226 + r * 46, done = r < k, cur = r === k;
+      const pip = this.add.circle(px, 92, cur ? 15 : 13, done ? 0x5ad86a : cur ? 0xffd36a : 0x000000, done || cur ? 1 : 0.35).setStrokeStyle(4, done ? 0x1a4a22 : cur ? 0x6a3a00 : 0xbfae9a);
+      if (done) this.add.text(px, 92, '✓', { fontFamily: 'sans-serif', fontSize: '20px', color: '#0c2a10', fontStyle: 'bold' }).setOrigin(0.5);
+      if (cur) { this.tweens.add({ targets: pip, scale: 1.15, yoyo: true, repeat: -1, duration: 380 }); }
     }
-    txt(this, 490, 82, t('next', t('boss')[this.stage], fmt(st.hp)), 19, '#f0e6ff', { strokeThickness: 4, maxW: 360 });
+    txt(this, 520, 92, `HP ${fmt(st.hp)}`, 22, '#ff9a8a', { strokeThickness: 6, maxW: 300 });
     this.prompt = txt(this, 430, 142, t('pickOne'), 38, '#ffffff', { strokeThickness: 8, maxW: 600 }).setAlpha(0);
     this.tip = new Tooltip(this, () => this.items);
     this.drawInventory();
@@ -460,8 +470,13 @@ class Pick extends Phaser.Scene {
   addInvRow(i, it) {
     const x0 = 880, y = this.rowY + i * this.rowH, sm = this.rowH < 40, bx = sm ? 32 : 38;
     if (!it) { this.add.rectangle(x0 + 21, y, bx - 2, bx - 2, 0xffffff, 0.06).setStrokeStyle(1, 0x5a4a3a); return; }
+    // the WHOLE row (icon + name + numbers) is the hover / tap target; height rowH-2 so neighbouring rows never overlap
+    const row = this.add.rectangle(x0 + 151, y, 302, this.rowH - 2, 0xffffff, 0.001).setData('row', true);
+    this.tip.attach(row, it);
+    (this.rows = this.rows || [])[i] = { x: x0 + 151, y, w: 302, h: this.rowH - 2 };
+    window.DC.bagRows = this.rows;
     this.add.rectangle(x0 + 21, y, bx, bx, itemCol(it), 0.3).setStrokeStyle(2, it.bonus ? 0xffd36a : itemCol(it));
-    this.tip.attach(this.add.image(x0 + 21, y, 'icons', it.frame).setScale(sm ? 0.88 : 1), it);
+    this.add.image(x0 + 21, y, 'icons', it.frame).setScale(sm ? 0.88 : 1);
     clipText(this.add.text(x0 + 46, y - (sm ? 16 : 18), (it.bonus ? '★ ' : '') + it.name, { fontFamily: FONT, fontSize: (sm ? 15 : 16) + 'px', color: it.bonus ? '#ffe08a' : '#ffffff', fontStyle: 'bold' }), 250);
     const rt = this.add.text(x0 + 46, y + 1, ruleText(it), { fontFamily: FONT, fontSize: (sm ? 14 : 15) + 'px', color: it.kind === 'cursed' ? '#ff7a8a' : it.mult ? '#ffd84a' : '#b8f0a0' });
     fitText(rt, 250, sm ? 14 : 15);
