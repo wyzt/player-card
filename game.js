@@ -2,9 +2,9 @@
 const RULES = {
   rounds: 8,
   dragonHP: 1000,
-  wood:  { min: 15, max: 30 },
-  gold:  { accChance: 0.8, multMin: 0.3, multMax: 0.8, wMin: 20, wMax: 50 },
-  black: { goodChance: 0.55, wMin: 190, wMax: 290, cMin: 70, cMax: 140 },
+  wood:  { min: 15, max: 30, spread: 0.35 },
+  gold:  { accChance: 0.8, multMin: 0.3, multMax: 0.8, wMin: 20, wMax: 50, spread: 0.3 },
+  black: { goodChance: 0.56, wMin: 190, wMax: 290, cMin: 70, cMax: 140, wSpread: 0.2, cSpread: 0.3 },
   setCount: 5, setMult: 2,
   offerWeights: { wood: 0.5, gold: 0.22, black: 0.28 },
 };
@@ -17,23 +17,31 @@ function rollOffer(rng) {
   const one = () => { const x = rng(); return x < w.wood ? 'wood' : x < w.wood + w.gold ? 'gold' : 'black'; };
   return [0, 1, 2].map(() => ({ type: one(), element: pick(rng, ELEMENTS) }));
 }
+// every flat item has an ATK RANGE [lo, hi]; the roll happens at the strike. Multipliers are fixed.
+function span(c, sp) { const h = Math.round(c * sp); return [c - h, c + h]; }
 function openChest(chest, rng) {
   const R = RULES, el = chest.element;
-  if (chest.type === 'wood') return { kind: pick(rng, ['weapon', 'armor']), element: el, flat: ri(rng, R.wood.min, R.wood.max), mult: 0 };
+  const flatItem = (kind, c, sp) => { const [lo, hi] = span(c, sp); return { kind, element: el, flat: c, lo, hi, mult: 0 }; };
+  if (chest.type === 'wood') return flatItem(pick(rng, ['weapon', 'armor']), ri(rng, R.wood.min, R.wood.max), R.wood.spread);
   if (chest.type === 'gold') {
-    if (rng() < R.gold.accChance) return { kind: 'accessory', element: el, flat: 0, mult: ri(rng, R.gold.multMin * 10, R.gold.multMax * 10) / 10 };
-    return { kind: 'weapon', element: el, flat: ri(rng, R.gold.wMin, R.gold.wMax), mult: 0 };
+    if (rng() < R.gold.accChance) return { kind: 'accessory', element: el, flat: 0, lo: 0, hi: 0, mult: ri(rng, R.gold.multMin * 10, R.gold.multMax * 10) / 10 };
+    return flatItem('weapon', ri(rng, R.gold.wMin, R.gold.wMax), R.gold.spread);
   }
-  if (rng() < R.black.goodChance) return { kind: 'weapon', element: el, flat: ri(rng, R.black.wMin, R.black.wMax), mult: 0 };
-  return { kind: 'cursed', element: el, flat: -ri(rng, R.black.cMin, R.black.cMax), mult: 0 };
+  if (rng() < R.black.goodChance) return flatItem('weapon', ri(rng, R.black.wMin, R.black.wMax), R.black.wSpread);
+  const c = ri(rng, R.black.cMin, R.black.cMax), [a, b] = span(c, R.black.cSpread);
+  return { kind: 'cursed', element: el, flat: -c, lo: -b, hi: -a, mult: 0 };
 }
-function computeDamage(items) {
+// rng given -> roll every item inside its range; no rng -> use the average (for previews)
+function rollItem(it, rng) { return it.lo === it.hi ? it.lo : rng ? ri(rng, it.lo, it.hi) : (it.lo + it.hi) / 2; }
+function computeDamage(items, rng) {
   let flat = 0, mult = 0; const cnt = { Fire: 0, Ice: 0, Thunder: 0 };
-  for (const it of items) { flat += it.flat; mult += it.mult; if (cnt[it.element] !== undefined) cnt[it.element]++; }
+  const rolls = items.map((it) => rollItem(it, rng));
+  items.forEach((it, i) => { flat += rolls[i]; mult += it.mult; if (cnt[it.element] !== undefined) cnt[it.element]++; });
   let setEl = null; for (const e of ELEMENTS) if (cnt[e] >= RULES.setCount && (!setEl || cnt[e] > cnt[setEl])) setEl = e;
   const set = setEl ? RULES.setMult : 1;
-  flat = Math.max(0, flat);
-  return { flat, mult: Math.round(mult * 10) / 10, set, setEl, total: Math.round(flat * (1 + mult) * set) };
+  const raw = Math.round(flat);
+  flat = Math.max(0, raw);
+  return { rolls, raw, flat, mult: Math.round(mult * 10) / 10, set, setEl, total: Math.round(flat * (1 + mult) * set) };
 }
 // ===== END LOGIC =====
 
@@ -63,7 +71,7 @@ function nameItem(it) {
   return it;
 }
 // Every item states its own damage rule.
-const ruleText = (it) => it.kind === 'cursed' ? `${it.flat} ATK (cursed)` : it.mult ? `+${it.mult.toFixed(1)}x total damage` : `+${it.flat} ATK`;
+const ruleText = (it) => it.kind === 'cursed' ? `${it.hi} to ${it.lo} ATK (cursed)` : it.mult ? `+${it.mult.toFixed(1)}x total damage` : `${it.lo}–${it.hi} ATK`;
 const elemCount = (items, el) => items.filter((i) => i.element === el).length;
 const setLine = (it, items) => `${it.element} set: ${RULES.setCount} ${it.element} items = x${RULES.setMult} damage (you have ${Math.min(elemCount(items, it.element), RULES.setCount)}/${RULES.setCount})`;
 const itemCol = (it) => it.kind === 'cursed' ? CURSE_COL : EL_COLOR[it.element];
@@ -172,9 +180,55 @@ class Tooltip {
     x = Phaser.Math.Clamp(x, 8, W - sw - 8);
     const ty = Phaser.Math.Clamp(b.centerY - sh / 2, 8, H - sh - 8);
     this.c.setScale(k).setPosition(x, ty).setScrollFactor(0).setVisible(true);
-    window.DC.tooltip = { name: it.name, x, y: ty, w: sw, h: sh };
+    window.DC.tooltip = { name: it.name, rule: ruleText(it), x, y: ty, w: sw, h: sh };
   }
   hide(force) { if (force) this.pinned = false; this.c.setVisible(false); this.cur = null; window.DC.tooltip = null; }
+}
+// canvas-drawn light textures for the reveal FX (no image assets)
+function makeFxTextures(scene) {
+  const T = scene.textures, mk = (key, w, h, draw) => { if (T.exists(key)) return; const t = T.createCanvas(key, w, h); draw(t.getContext(), w, h); t.refresh(); };
+  mk('beam', 64, 512, (c, w, h) => { // soft vertical light shaft, bright at the bottom
+    const gx = c.createLinearGradient(0, 0, w, 0); gx.addColorStop(0, 'rgba(255,255,255,0)'); gx.addColorStop(0.5, 'rgba(255,255,255,1)'); gx.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = gx; c.fillRect(0, 0, w, h);
+    c.globalCompositeOperation = 'destination-in';
+    const gy = c.createLinearGradient(0, 0, 0, h); gy.addColorStop(0, 'rgba(0,0,0,0)'); gy.addColorStop(0.6, 'rgba(0,0,0,0.7)'); gy.addColorStop(1, 'rgba(0,0,0,1)');
+    c.fillStyle = gy; c.fillRect(0, 0, w, h);
+  });
+  mk('rays', 256, 256, (c, w, h) => { // 12 wedge god-rays fading out from the centre
+    c.translate(w / 2, h / 2); c.fillStyle = '#fff';
+    for (let k = 0; k < 12; k++) { const a = k * Math.PI / 6; c.beginPath(); c.moveTo(0, 0); c.arc(0, 0, w / 2, a - 0.11, a + 0.11); c.closePath(); c.fill(); }
+    c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'destination-in';
+    const g = c.createRadialGradient(w / 2, h / 2, 6, w / 2, h / 2, w / 2); g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = g; c.fillRect(0, 0, w, h);
+  });
+  mk('vig', 256, 134, (c, w, h) => {
+    const g = c.createRadialGradient(w / 2, h / 2, h * 0.3, w / 2, h / 2, w * 0.62); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.92)');
+    c.fillStyle = g; c.fillRect(0, 0, w, h);
+  });
+  mk('glowdot', 128, 128, (c, w) => {
+    const g = c.createRadialGradient(w / 2, w / 2, 0, w / 2, w / 2, w / 2); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.35, 'rgba(255,255,255,0.6)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = g; c.fillRect(0, 0, w, w);
+  });
+}
+// ---- music: main loop, end-screen victory / defeat cue, back to the main loop on Play Again
+const MAIN_VOL = 0.35;
+function endMusic(scene, win) {
+  const snd = scene.sound, m = snd.get('music');
+  if (m && m.isPlaying) scene.tweens.add({ targets: m, volume: 0, duration: 900, onComplete: () => { try { m.pause(); } catch (e) {} } });
+  snd.stopByKey('victory'); snd.stopByKey('defeat');
+  const key = win ? 'victory' : 'defeat';
+  scene.time.delayedCall(win ? 500 : 700, () => { try { snd.play(key, { volume: win ? 0.55 : 0.6 }); } catch (e) {} });
+  window.DC.music = { end: key };
+}
+function restoreMusic(scene) {
+  const snd = scene.sound; snd.stopByKey('victory'); snd.stopByKey('defeat');
+  const m = snd.get('music');
+  if (m) { m.setVolume(0); try { if (m.isPaused) m.resume(); else if (!m.isPlaying) m.play(); } catch (e) {} window.__fadeMain = true; }
+  window.DC.music = { end: null };
+}
+function fadeInMain(scene) {
+  if (!window.__fadeMain) return; window.__fadeMain = false;
+  const m = scene.sound.get('music'); if (m) scene.tweens.add({ targets: m, volume: MAIN_VOL, duration: 1200 });
 }
 function heroGlow(spr) { try { if (spr.preFX) spr.preFX.addGlow(0xfff2b0, 3, 0, false, 0.1, 10); } catch (e) {} }
 
@@ -191,7 +245,7 @@ class Boot extends Phaser.Scene {
     this.load.spritesheet('hero_idle', I + 'hero_idle.png', { frameWidth: 64, frameHeight: 64 });
     this.load.spritesheet('hero_run', I + 'hero_run.png', { frameWidth: 64, frameHeight: 64 });
     this.load.spritesheet('hero_attack', I + 'hero_attack.png', { frameWidth: 64, frameHeight: 64 });
-    ['click', 'open', 'rare', 'curse', 'swing', 'hit', 'win', 'lose', 'music'].forEach((k) => this.load.audio(k, A + k + '.mp3'));
+    ['click', 'open', 'rare', 'curse', 'swing', 'hit', 'win', 'lose', 'music', 'epic', 'legendary', 'charge', 'banner', 'tick', 'victory', 'defeat'].forEach((k) => this.load.audio(k, A + k + '.mp3'));
   }
   create() {
     const a = (key, tex, rate, repeat = -1) => this.anims.create({ key, frames: this.anims.generateFrameNumbers(tex), frameRate: rate, repeat });
@@ -200,7 +254,10 @@ class Boot extends Phaser.Scene {
     // generated FX textures
     const g = this.make.graphics({ x: 0, y: 0, add: false });
     g.fillStyle(0xffffff, 1); g.fillRect(0, 0, 6, 6); g.generateTexture('spark', 6, 6); g.clear();
-    g.fillStyle(0xffffff, 1); g.fillRect(0, 0, 3, 3); g.generateTexture('px', 3, 3); g.destroy();
+    g.fillStyle(0xffffff, 1); g.fillRect(0, 0, 3, 3); g.generateTexture('px', 3, 3); g.clear();
+    g.fillStyle(0xffffff, 1); g.fillRect(0, 0, 6, 3); g.generateTexture('conf', 6, 3); g.clear();
+    g.fillStyle(0x8a5a00, 1); g.fillRect(1, 0, 4, 6); g.fillRect(0, 1, 6, 4); g.fillStyle(0xffcf40, 1); g.fillRect(1, 1, 4, 4); g.fillStyle(0xfff4b0, 1); g.fillRect(2, 1, 1, 2); g.generateTexture('coin', 6, 6); g.destroy();
+    makeFxTextures(this);
     this.scene.start('title');
   }
 }
@@ -243,9 +300,11 @@ class Title extends Phaser.Scene {
 
 class Pick extends Phaser.Scene {
   constructor() { super('pick'); }
-  init(data) { this.round = data.round; this.items = data.items; this.locked = false; this.done = false; this.canSkip = false; this.autoNext = null; }
+  init(data) { this.round = data.round; this.items = data.items; this.locked = false; this.done = false; this.canSkip = false; this.autoNext = null; this.dim = null; }
   create() {
-    window.DC.phase = 'pick'; window.DC.round = this.round + 1;
+    window.DC.phase = 'pick'; window.DC.round = this.round + 1; window.DC.reveal = null;
+    this.tweens.timeScale = 1; this.time.timeScale = 1;
+    fadeInMain(this);
     backdrop(this, 'bg_hoard', 0.45);
     panel(this, 250, 14, 360, 92);
     txt(this, 430, 46, `CHEST ${this.round + 1} / ${RULES.rounds}`, 40, '#ffd36a');
@@ -301,49 +360,169 @@ class Pick extends Phaser.Scene {
     this.add.text(x0 + 50, y - 19, nm, { fontFamily: FONT, fontSize: '17px', color: '#ffffff', fontStyle: 'bold' });
     this.add.text(x0 + 50, y + 1, ruleText(it), { fontFamily: FONT, fontSize: '16px', color: it.kind === 'cursed' ? '#ff7a8a' : it.mult ? '#ffd84a' : '#b8f0a0' });
   }
+  forcedItem(ch) { // test hook: DC.force = 'EPIC' | 'LEGENDARY'
+    const f = window.DC.force; if (!f) return null; window.DC.force = null;
+    const c = f === 'LEGENDARY' ? 270 : 200, [lo, hi] = span(c, RULES.black.wSpread);
+    return { kind: 'weapon', element: ch.c.element, flat: c, lo, hi, mult: 0 };
+  }
   choose(i) {
     if (this.locked) return; this.locked = true;
     const ch = this.chests[i];
     this.chests.forEach((o, j) => { o.zone.disableInteractive(); o.sp.stop(); if (j !== i) { this.tweens.killTweensOf([o.spr, o.glow, o.gem]); this.tweens.add({ targets: [o.spr, o.glow, o.gem, o.label, o.el], alpha: 0.12, duration: 250 }); } });
     sfx(this, 'click');
-    this.tweens.killTweensOf(ch.spr); ch.spr.setScale(5);
-    ch.glow.setAlpha(0.6);
-    this.tweens.add({ targets: ch.spr, x: { from: ch.x - 6, to: ch.x + 6 }, duration: 55, yoyo: true, repeat: 4, onComplete: () => this.reveal(ch) });
+    const it = nameItem(this.forcedItem(ch) || openChest(ch.c, Math.random));
+    const tier = it.rarity, R = RARITY[tier], big = tier === 'EPIC' || tier === 'LEGENDARY', leg = tier === 'LEGENDARY';
+    window.DC.reveal = { rarity: tier, stage: 'anticipation' };
+    this.tweens.killTweensOf([ch.spr, ch.glow]); ch.spr.setScale(5).setDepth(11); ch.glow.setDepth(11);
+    // colour hint: the chest glow shifts to the rarity colour while it charges
+    const hint = tier === 'COMMON' ? EL_COLOR[ch.c.element] : R.col;
+    ch.glow.setAlpha(0);
+    ch.soft = this.add.image(ch.x, ch.y + 10, 'glowdot').setTint(hint).setBlendMode(Phaser.BlendModes.ADD).setDepth(11).setScale(big ? 2.25 : 1.75).setAlpha(0.5);
+    this.tweens.add({ targets: ch.soft, scale: big ? 3 : 2, alpha: big ? 0.95 : 0.7, yoyo: true, repeat: -1, duration: big ? 170 : 260 });
+    const dur = { COMMON: 330, RARE: 520, EPIC: 1000, LEGENDARY: 1450, CURSED: 800 }[tier];
+    if (big) { this.dimIn(leg ? 0.62 : 0.5); sfx(this, 'charge', leg ? 0.9 : 0.7); }
+    // light leaking from the lid seam, growing with the charge
+    const leaks = [];
+    const nLeak = { COMMON: 0, RARE: 3, EPIC: 5, LEGENDARY: 7, CURSED: 4 }[tier];
+    for (let k = 0; k < nLeak; k++) {
+      const a = -70 + (140 / Math.max(1, nLeak - 1)) * k + Phaser.Math.Between(-6, 6);
+      const l = this.add.image(ch.x + Phaser.Math.Between(-40, 40), ch.y + 20, 'beam').setOrigin(0.5, 1).setAngle(a).setTint(hint)
+        .setBlendMode(Phaser.BlendModes.ADD).setDepth(12).setScale(0.25, 0).setAlpha(0.9);
+      this.tweens.add({ targets: l, scaleY: { from: 0, to: big ? 1.1 : 0.6 }, duration: dur, delay: k * (dur / nLeak / 2), ease: 'Quad.in' });
+      leaks.push(l);
+    }
+    // shake harder and harder
+    const t0 = this.time.now, amp = { COMMON: 5, RARE: 6, EPIC: 9, LEGENDARY: 13, CURSED: 8 }[tier];
+    const shaker = this.time.addEvent({ delay: 33, loop: true, callback: () => {
+      const p = Math.min(1, (this.time.now - t0) / dur), a = amp * (0.35 + p);
+      ch.spr.setPosition(ch.x + Phaser.Math.FloatBetween(-a, a), ch.y + 80 + 12 + Phaser.Math.FloatBetween(-a * 0.4, 0));
+      ch.spr.setAngle(Phaser.Math.FloatBetween(-a * 0.25, a * 0.25));
+    } });
+    if (big) this.cameras.main.shake(dur, leg ? 0.004 : 0.0025);
+    this.time.delayedCall(dur, () => { shaker.remove(); ch.spr.setPosition(ch.x, ch.y + 92).setAngle(0); leaks.forEach((l) => this.tweens.add({ targets: l, alpha: 0, duration: 200, onComplete: () => l.destroy() })); this.reveal(ch, it); });
   }
-  reveal(ch) {
-    const it = nameItem(openChest(ch.c, Math.random));
+  dimIn(a) {
+    if (this.dim) return;
+    this.dim = this.add.rectangle(-100, -100, W + 200, H + 200, 0x05030a, 1).setOrigin(0).setDepth(10).setAlpha(0);
+    this.vig = this.add.image(W / 2, H / 2, 'vig').setDisplaySize(W + 40, H + 40).setDepth(10).setAlpha(0);
+    this.tweens.add({ targets: this.dim, alpha: a, duration: 450 }); this.tweens.add({ targets: this.vig, alpha: 1, duration: 450 });
+  }
+  dimOut(delay) {
+    if (!this.dim) return;
+    this.tweens.add({ targets: [this.dim, this.vig], alpha: 0, duration: 600, delay });
+  }
+  slowMo(scale, ms) { // slow every tween in the scene for `ms` real milliseconds
+    this.tweens.timeScale = scale; this.time.timeScale = scale;
+    setTimeout(() => { if (this.tweens) { this.tweens.timeScale = 1; this.time.timeScale = 1; } }, ms);
+  }
+  reveal(ch, it) {
     this.items.push(it);
-    const R = RARITY[it.rarity];
-    ch.spr.setTexture('open_' + ch.c.type).setX(ch.x);
-    const ring = this.add.circle(ch.x, ch.y, 30, R.col, 0.8).setBlendMode(Phaser.BlendModes.ADD);
-    this.tweens.add({ targets: ring, scale: 2 + R.n / 10, alpha: 0, duration: 600, onComplete: () => ring.destroy() });
-    burst(this, ch.x, ch.y - 10, R.col, R.n, 200 + R.n * 4);
-    if (it.rarity !== 'COMMON') burst(this, ch.x, ch.y - 10, itemCol(it), Math.round(R.n / 2), 180, 'px');
-    if (R.shake) this.cameras.main.shake(300, R.shake);
-    if (it.rarity === 'LEGENDARY') this.cameras.main.flash(260, 255, 220, 120);
-    if (it.rarity === 'CURSED') this.cameras.main.flash(200, 120, 0, 160);
+    const tier = it.rarity, R = RARITY[tier], big = tier === 'EPIC' || tier === 'LEGENDARY', leg = tier === 'LEGENDARY';
+    const lite = this.scale.displaySize.width < 700 ? 0.6 : 1; // fewer particles on small screens
+    const N = (n) => Math.max(4, Math.round(n * lite));
+    const cam = this.cameras.main;
+    window.DC.reveal = { rarity: tier, stage: 'pop' };
+    ch.spr.setTexture('open_' + ch.c.type);
+    this.tweens.killTweensOf(ch.soft); ch.soft.setScale(big ? 4 : 2.5).setAlpha(1); this.tweens.add({ targets: ch.soft, scale: big ? 2.75 : 2, alpha: 0.55, duration: 900, ease: 'Quad.out' });
+    const iy = ch.y - (big ? 170 : 150), D = 13;
+    // hit-stop: freeze a beat on the pop (bigger = longer), then slow motion
+    if (big) {
+      this.tweens.pauseAll(); this.anims.pauseAll();
+      setTimeout(() => { if (this.tweens) { this.tweens.resumeAll(); this.anims.resumeAll(); this.slowMo(leg ? 0.3 : 0.45, leg ? 900 : 450); } }, leg ? 170 : 100);
+    }
+    // god-ray pillar
+    if (tier !== 'COMMON') {
+      const pil = this.add.image(ch.x, ch.y + 40, 'beam').setOrigin(0.5, 1).setTint(R.col).setBlendMode(Phaser.BlendModes.ADD).setDepth(D)
+        .setScale(0, big ? 3 : 2).setAlpha(big ? 1 : 0.7);
+      this.tweens.add({ targets: pil, scaleX: { from: 0, to: big ? (leg ? 2.4 : 1.8) : 1 }, duration: 260, ease: 'Quad.out' });
+      this.tweens.add({ targets: pil, alpha: 0, scaleX: 0.2, delay: big ? 1300 : 700, duration: 700, onComplete: () => pil.destroy() });
+    }
+    // rotating rays behind the item
+    if (tier !== 'COMMON') {
+      const rays = this.add.image(ch.x, iy, 'rays').setTint(R.col).setBlendMode(Phaser.BlendModes.ADD).setDepth(D).setScale(0).setAlpha(big ? 0.9 : 0.55);
+      this.tweens.add({ targets: rays, scale: big ? (leg ? 1.9 : 1.5) : 1, duration: 420, ease: 'Back.out' });
+      this.tweens.add({ targets: rays, angle: 360, duration: leg ? 5000 : 7000, repeat: -1 });
+      if (leg) { const r2 = this.add.image(ch.x, iy, 'rays').setTint(0xffffff).setBlendMode(Phaser.BlendModes.ADD).setDepth(D).setScale(1.2).setAlpha(0.35); this.tweens.add({ targets: r2, angle: -360, duration: 9000, repeat: -1 }); }
+    }
+    // shockwave ring(s)
+    const ring = (delay, w, to) => {
+      const r = this.add.circle(ch.x, ch.y, 30).setStrokeStyle(w, R.col, 1).setDepth(D + 1).setBlendMode(Phaser.BlendModes.ADD);
+      r.isFilled = false;
+      this.tweens.add({ targets: r, scale: to, alpha: { from: 1, to: 0 }, delay, duration: 650, ease: 'Cubic.out', onComplete: () => r.destroy() });
+    };
+    ring(0, big ? 10 : 6, big ? 9 : 2 + R.n / 10);
+    if (leg) ring(180, 6, 13);
+    // radial burst + lingering sparkles
+    burst(this, ch.x, ch.y - 10, R.col, N(big ? R.n * 1.6 : R.n), 200 + R.n * (big ? 7 : 4)).setDepth(D + 2);
+    if (tier !== 'COMMON') burst(this, ch.x, ch.y - 10, itemCol(it), N(R.n / 2), 180, 'px').setDepth(D + 2);
+    if (tier !== 'COMMON') {
+      const lin = this.add.particles(ch.x, iy, 'glowdot', {
+        x: { min: -90, max: 90 }, y: { min: -80, max: 80 }, lifespan: { min: 600, max: 1200 }, speedY: { min: -40, max: -10 },
+        scale: { start: big ? 0.09 : 0.065, end: 0 }, alpha: { start: 1, end: 0 }, tint: [R.col, 0xffffff], blendMode: 'ADD', frequency: big ? 45 / lite : 110 / lite,
+      }).setDepth(D + 2);
+      this.time.delayedCall(big ? 2600 : 1500, () => lin.stop()); this.time.delayedCall(big ? 4000 : 2800, () => lin.destroy());
+    }
+    // flash + shake
+    if (leg) { cam.flash(420, 255, 230, 140); cam.shake(650, 0.02); }
+    else if (tier === 'EPIC') { cam.flash(260, 220, 160, 255); cam.shake(380, 0.011); }
+    else if (tier === 'CURSED') { cam.flash(200, 120, 0, 160); cam.shake(300, R.shake); }
+    else if (tier === 'RARE') cam.flash(120, 140, 220, 255);
+    // legendary: coin + confetti shower
+    if (leg) {
+      const cols = [0xffcf40, 0xff5a8a, 0x5ad2ff, 0x8aff7a, 0xd58cff, 0xffffff];
+      const coins = this.add.particles(0, -20, 'coin', { x: { min: 20, max: 840 }, lifespan: 2200, speedY: { min: 120, max: 260 }, speedX: { min: -40, max: 40 }, gravityY: 260, rotate: { min: 0, max: 360 }, scale: { min: 1.4, max: 2.2 }, frequency: 28 / lite, quantity: 1 }).setDepth(D + 3);
+      const conf = this.add.particles(0, -20, 'conf', { x: { min: 20, max: 840 }, lifespan: 2600, speedY: { min: 80, max: 200 }, speedX: { min: -80, max: 80 }, gravityY: 140, rotate: { start: 0, end: 720 }, scale: { min: 1.5, max: 2.5 }, tint: cols, frequency: 22 / lite, quantity: 1 }).setDepth(D + 3);
+      this.time.delayedCall(1700, () => { coins.stop(); conf.stop(); });
+      this.time.delayedCall(4600, () => { coins.destroy(); conf.destroy(); });
+    }
+    // sound
     sfx(this, 'open');
-    sfx(this, it.kind === 'cursed' ? 'curse' : it.rarity === 'COMMON' ? 'open' : 'rare', it.rarity === 'COMMON' ? 0.4 : 0.7);
-    const icon = this.tip.attach(this.add.image(ch.x, ch.y, 'icons', it.frame).setScale(1), it);
-    this.tweens.add({ targets: icon, y: ch.y - 150, scale: 3, duration: 450, ease: 'Back.out' });
+    if (leg) { sfx(this, 'legendary', 0.95); sfx(this, 'rare', 0.6); }
+    else if (tier === 'EPIC') { sfx(this, 'epic', 0.85); sfx(this, 'rare', 0.45); }
+    else sfx(this, it.kind === 'cursed' ? 'curse' : tier === 'COMMON' ? 'open' : 'rare', tier === 'COMMON' ? 0.4 : 0.7);
+    // item rises with glow and a bounce
+    const icon = this.tip.attach(this.add.image(ch.x, ch.y, 'icons', it.frame).setScale(1).setDepth(D + 4), it);
+    if (tier !== 'COMMON') { try { if (icon.preFX) icon.preFX.addGlow(R.col, big ? 6 : 3, 0, false, 0.1, 12); } catch (e) {} }
+    const sc = leg ? 4 : big ? 3.6 : 3;
+    this.tweens.add({ targets: icon, y: iy, scale: sc, duration: big ? 520 : 450, ease: 'Back.out', onComplete: () => {
+      if (big) this.tweens.add({ targets: icon, y: iy - 8, yoyo: true, repeat: -1, duration: 700, ease: 'Sine.inOut' });
+    } });
+    // rarity banner with a shine sweep
+    if (big) {
+      this.time.delayedCall(leg ? 260 : 200, () => {
+        const label = leg ? 'LEGENDARY!!' : 'EPIC!', size = leg ? 66 : 70;
+        const bw = label.length * size * 0.62;
+        const bx = Phaser.Math.Clamp(ch.x, bw / 2 + 12, 856 - bw / 2);
+        const ban = txt(this, bx, ch.y + 64, label, size, R.css, { strokeThickness: 12, stroke: leg ? '#4a2400' : '#2a0a40' }).setDepth(D + 5);
+        try { if (ban.preFX) { ban.preFX.addShine(leg ? 0.9 : 0.7, 0.35, 4); ban.preFX.addGlow(R.col, 4, 0, false, 0.1, 10); } } catch (e) {}
+        popText(this, ban, 1); sfx(this, 'banner', 0.7);
+        this.tweens.add({ targets: ban, angle: { from: -4, to: 4 }, yoyo: true, repeat: -1, duration: 500, ease: 'Sine.inOut' });
+        window.DC.reveal = { rarity: tier, stage: 'banner' };
+      });
+      this.dimOut(leg ? 1900 : 1400);
+    }
     // item card with the item's own damage rule
-    const card = this.add.container(430, 540);
-    const pg = panel(this, -330, -62, 660, 124, { border: R.col });
-    const tag = txt(this, -250, -38, it.rarity, 16, R.css, { strokeThickness: 4 });
-    const t1 = txt(this, 30, -36, it.name, 28, it.kind === 'cursed' ? '#d9a6ff' : EL_CSS[it.element]);
-    const t2 = txt(this, 0, 2, ruleText(it), 32, it.kind === 'cursed' ? '#ff6a7a' : it.mult ? '#ffd84a' : '#b8f0a0');
-    const t3 = txt(this, 0, 38, setLine(it, this.items), 18, EL_CSS[it.element], { strokeThickness: 4 });
-    card.add([pg, tag, t1, t2, t3]); card.setAlpha(0);
-    this.tweens.add({ targets: card, alpha: 1, duration: 150 }); popText(this, card, 1);
+    this.time.delayedCall(big ? (leg ? 700 : 560) : 0, () => {
+      const card = this.add.container(430, 540).setDepth(20);
+      const pg = panel(this, -330, -62, 660, 124, { border: R.col });
+      const tag = txt(this, -250, -38, tier, 16, R.css, { strokeThickness: 4 });
+      const t1 = txt(this, 30, -36, it.name, 28, it.kind === 'cursed' ? '#d9a6ff' : EL_CSS[it.element]);
+      const t2 = txt(this, 0, 2, ruleText(it), 32, it.kind === 'cursed' ? '#ff6a7a' : it.mult ? '#ffd84a' : '#b8f0a0');
+      const t3 = txt(this, 0, 38, setLine(it, this.items), 18, EL_CSS[it.element], { strokeThickness: 4 });
+      card.add([pg, tag, t1, t2, t3]); card.setAlpha(0);
+      this.tweens.add({ targets: card, alpha: 1, duration: 150 }); popText(this, card, 1);
+    });
     this.addInvRow(this.items.length - 1, it);
     this.updateCounters();
-    this.time.delayedCall(350, () => { this.canSkip = true; });
-    this.autoNext = this.time.delayedCall(1900, () => this.next(true));
+    // tap anywhere to skip once the reveal has landed
+    setTimeout(() => { this.canSkip = true; if (window.DC.reveal) window.DC.reveal.skippable = true; }, big ? (leg ? 1000 : 750) : 350);
+    this.autoNext = this.time.delayedCall({ COMMON: 1900, RARE: 2200, CURSED: 2200, EPIC: 2400, LEGENDARY: 2700 }[tier], () => this.next(true));
   }
   next(fromTimer) {
     if (this.done) return;
     if (fromTimer && this.tip && this.tip.visible) { this.autoNext = this.time.delayedCall(600, () => this.next(true)); return; } // let players read
     this.done = true; if (this.tip) this.tip.hide(true);
+    this.tweens.timeScale = 1; this.time.timeScale = 1; this.tweens.resumeAll(); this.anims.resumeAll();
     if (this.autoNext) this.autoNext.remove();
     if (this.round + 1 >= RULES.rounds) this.scene.start('strike', { items: this.items });
     else this.scene.start('pick', { round: this.round + 1, items: this.items });
@@ -356,7 +535,7 @@ class Strike extends Phaser.Scene {
   create() {
     window.DC.phase = 'strike';
     backdrop(this, 'bg_lava', 0.12);
-    this.res = computeDamage(this.items);
+    this.res = computeDamage(this.items, Math.random); // each item rolls inside its ATK range
     window.DC.result = this.res;
     this.tip = new Tooltip(this, () => this.items);
     this.dShadow = shadow(this, 900 + 94, LAVA_GROUND, 290);
@@ -386,6 +565,48 @@ class Strike extends Phaser.Scene {
   strike() {
     if (this.struck) return; this.struck = true; window.DC.phase = 'striking';
     this.btn.destroy(); this.ready.destroy();
+    this.tip.hide(true);
+    this.rollSeq(() => this.charge());
+  }
+  // show every item's roll ticking up inside its range, then the total
+  rollSeq(done) {
+    window.DC.phase = 'rolling';
+    const r = this.res, its = this.items, n = its.length, rowH = 31, top = 84, x0 = 20, w = 600;
+    const h = top - 16 + n * rowH + 64;
+    const box = this.add.container(0, 0).setDepth(50);
+    box.add(panel(this, x0, 16, w, h));
+    box.add(txt(this, x0 + w / 2, 46, 'ROLLING YOUR GEAR', 28, '#ffd36a'));
+    const st = (x, y, t, size, col, ox = 0) => this.add.text(x, y, t, { fontFamily: FONT, fontSize: size + 'px', color: col, fontStyle: 'bold', stroke: '#140812', strokeThickness: 3 }).setOrigin(ox, 0.5);
+    let sum = 0, mult = 0;
+    const foot = txt(this, x0 + w / 2, 16 + h - 32, 'ATK 0', 30, '#ffffff'); box.add(foot);
+    const footText = () => `ATK ${Math.max(0, Math.round(sum))}` + (mult ? `   x${(1 + mult).toFixed(1)}` : '');
+    const step = 190;
+    its.forEach((it, i) => {
+      const y = top + i * rowH, col = it.kind === 'cursed' ? '#ff7a8a' : it.mult ? '#ffd84a' : '#b8f0a0';
+      const ic = this.add.image(x0 + 28, y, 'icons', it.frame).setScale(0.8).setAlpha(0.35);
+      const nm = st(x0 + 50, y, it.name.length > 24 ? it.name.slice(0, 23) + '…' : it.name, 17, '#ffffff').setAlpha(0.35);
+      const rg = st(x0 + 440, y, it.mult ? 'no roll' : it.kind === 'cursed' ? `${it.hi} to ${it.lo}` : `${it.lo}–${it.hi}`, 16, '#bba8d0', 1).setAlpha(0.35);
+      const val = st(x0 + w - 22, y, '', 22, col, 1);
+      box.add([ic, nm, rg, val]);
+      this.time.delayedCall(250 + i * step, () => {
+        [ic, nm, rg].forEach((o) => o.setAlpha(1));
+        if (it.mult) { val.setText(`+${it.mult.toFixed(1)}x`); mult += it.mult; foot.setText(footText()); popText(this, val, 1); sfx(this, 'tick', 0.5); return; }
+        const c = { v: it.lo };
+        this.tweens.add({ targets: c, v: r.rolls[i], duration: 170, ease: 'Cubic.out',
+          onUpdate: () => val.setText((c.v >= 0 ? '+' : '') + Math.round(c.v)),
+          onComplete: () => { val.setText((r.rolls[i] >= 0 ? '+' : '') + r.rolls[i]); sum += r.rolls[i]; foot.setText(footText()); sfx(this, 'tick', 0.5); popText(this, val, 1);
+            const hi = it.hi === it.lo ? 1 : (r.rolls[i] - it.lo) / (it.hi - it.lo); if (it.kind !== 'cursed' && hi >= 0.85) val.setColor('#ffffff'); } });
+      });
+    });
+    this.time.delayedCall(250 + n * step + 250, () => {
+      const parts = [`ATK ${r.flat}`, `x${(1 + r.mult).toFixed(1)}`]; if (r.set > 1) parts.push(`x${r.set} ${r.setEl} set`);
+      foot.setText(parts.join('  ') + `  =  ${r.total}`).setColor('#ffd36a'); popText(this, foot, 1); sfx(this, 'banner', 0.5);
+      window.DC.phase = 'rolled';
+      this.time.delayedCall(1000, () => this.tweens.add({ targets: box, alpha: 0, duration: 250, onComplete: () => { box.destroy(); done(); } }));
+    });
+  }
+  charge() {
+    window.DC.phase = 'striking';
     const r = this.res, win = r.total >= RULES.dragonHP;
     this.hero.play('hero-run');
     this.cameras.main.zoomTo(1.12, 500, 'Sine.easeInOut');
@@ -478,6 +699,7 @@ class Strike extends Phaser.Scene {
   }
   end(win) {
     window.DC.phase = 'end'; window.DC.win = win;
+    endMusic(this, win);
     this.add.rectangle(0, 0, W, H, 0x000000, 0.65).setOrigin(0);
     panel(this, W / 2 - 360, 70, 720, 340, { border: win ? 0xffcf40 : 0xd04a3a });
     const t = txt(this, W / 2, 140, win ? 'DRAGON SLAIN!' : 'THE DRAGON ATE YOU', 64, win ? '#ffd36a' : '#ff5a4a', { strokeThickness: 10 });
@@ -491,7 +713,7 @@ class Strike extends Phaser.Scene {
     });
     if (win) burst(this, W / 2, 140, 0xffcf40, 60, 420);
     txt(this, W / 2, 384, 'Tap an item to inspect it', 16, '#bba8d0', { strokeThickness: 3 });
-    button(this, W / 2, 470, 'PLAY AGAIN', () => this.scene.start('pick', { round: 0, items: [] }), 300);
+    button(this, W / 2, 470, 'PLAY AGAIN', () => { restoreMusic(this); this.scene.start('pick', { round: 0, items: [] }); }, 300);
   }
 }
 
