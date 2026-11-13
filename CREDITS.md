@@ -5,6 +5,7 @@
 |---|---|---|---|
 | `assets/img/dragon_idle.png`, `assets/img/dragon_breath.png` (Grotto-escape-2-boss-dragon) | https://opengameart.org/content/sideview-fantasy-patreon-collection | ansimuz | CC0 |
 | `assets/img/bg_lava.png` (lava-background preview), `assets/img/bg_hoard.png` (treasure-hoard-platform preview) | https://opengameart.org/content/sideview-fantasy-patreon-collection | ansimuz | CC0 |
+| `assets/img/hound_idle.png` (Hell-Hound idle, stage 1 boss), `assets/img/beast_idle.png` (Hell-Beast idle, without-stroke, stage 2 boss) | https://opengameart.org/content/gothicvania-patreons-collection | ansimuz | CC0 |
 | `assets/img/hero_idle.png`, `hero_run.png`, `hero_attack.png` ("Hero Swordsman", 64x64 frames, re-packed into strips) | https://opengameart.org/content/hero-swordsman | tbbk | CC0 |
 | `assets/img/icons.png` (31 item icons), `chest_*.png` / `open_*.png` (I_Chest01/02, recoloured for wood/gold/black) | https://opengameart.org/content/496-pixel-art-icons-for-medievalfantasy-rpg | 7Soul1 (Henrique Lazarini) | CC0 |
 
@@ -21,10 +22,15 @@
 | `epic.mp3` (epic reveal sting, first 3.2 s) | Simple Magic Sound FX Pack Vol. 1 - Ovani Sound | `Ice/Crystal Column.wav` |
 | `charge.mp3` (chest charging rumble, first 1.8 s) | Simple Magic Sound FX Pack Vol. 1 - Ovani Sound | `Earth/Seismic Pulse.wav` |
 | `rare.mp3`, `curse.mp3`, `hit.mp3`, `lose.mp3`, `swing.mp3` | Simple Magic Sound FX Pack Vol. 1 - Ovani Sound | `Holy Nova`, `Necrotic Touch`, `Large Fireball Impact`, `Shadow Bolt Impact`, `Aero Blade Cast A` (.wav) |
+| `smash.mp3` (OVERKILL x2 hit, first 2.5 s) | Simple Magic Sound FX Pack Vol. 1 - Ovani Sound | `Earth/Boulder Throw Impact A.wav` |
+| `boom.mp3` (MEGA OVERKILL x5 hit, first 3 s) | Simple Magic Sound FX Pack Vol. 1 - Ovani Sound | `Fire/Combustion.wav` |
+| `nuke.mp3` (GODLIKE x10 hit, first 3.6 s) | Simple Magic Sound FX Pack Vol. 1 - Ovani Sound | `Fire/Phoenix Burst.wav` |
+| `shatter.mp3` (boss blown apart, first 3 s) | Simple Magic Sound FX Pack Vol. 1 - Ovani Sound | `Dark/Soul Shatter.wav` |
+| `stage.mp3` (stage intro card) | Fantasy UI Sound FX Pack Vol. 1 - Ovani Sound | `Transitions/Transition B 003.wav` |
 | `banner.mp3` (rarity banner / total) | Fantasy UI Sound FX Pack Vol. 1 - Ovani Sound | `Signals/Signal Positive A 004.wav` |
 | `tick.mp3` (damage roll tick) | Fantasy UI Sound FX Pack Vol. 1 - Ovani Sound | `Hovers/Hovers A 001.wav` |
 | `click.mp3`, `open.mp3`, `win.mp3` | Fantasy UI Sound FX Pack Vol. 1 - Ovani Sound | Clicks / Inventory / Signal Positive clips |
 
-All reveal light effects (beams, rays, vignette, coins, confetti) are drawn in code at runtime; no extra image assets.
+All reveal / overkill light effects (beams, rays, rings, vignette, coins, confetti, floating damage numbers) and the boss shatter are drawn in code at runtime from the sprites above; no extra image assets.
 
 Game code: Phaser 3 (MIT) via jsDelivr.

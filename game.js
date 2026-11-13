@@ -1,13 +1,20 @@
 // ===== GAME LOGIC (pure, no Phaser) =====
+// 3 stages: 3 chest picks each, then ONE strike with ALL gear collected so far (gear accumulates).
 const RULES = {
-  rounds: 8,
-  dragonHP: 1000,
+  picksPerStage: 3,
+  stages: [
+    { hp: 50, name: 'HELL HOUND', short: 'Hound' },
+    { hp: 400, name: 'HELL BEAST', short: 'Beast' },
+    { hp: 1400, name: 'ANCIENT DRAGON', short: 'Dragon' },
+  ],
   wood:  { min: 15, max: 30, spread: 0.35 },
   gold:  { accChance: 0.8, multMin: 0.3, multMax: 0.8, wMin: 20, wMax: 50, spread: 0.3 },
-  black: { goodChance: 0.56, wMin: 190, wMax: 290, cMin: 70, cMax: 140, wSpread: 0.2, cSpread: 0.3 },
+  black: { goodByStage: [0.75, 0.52, 0.48], wMin: 190, wMax: 290, cMin: 70, cMax: 140, wSpread: 0.2, cSpread: 0.3 },
+  baseAtk: 25,          // the hero's own swing, before any gear
   setCount: 5, setMult: 2,
   offerWeights: { wood: 0.5, gold: 0.22, black: 0.28 },
 };
+RULES.rounds = RULES.picksPerStage * RULES.stages.length;
 const TYPES = ['wood', 'gold', 'black'];
 const ELEMENTS = ['Fire', 'Ice', 'Thunder'];
 const ri = (rng, a, b) => a + Math.floor(rng() * (b - a + 1));
@@ -19,7 +26,7 @@ function rollOffer(rng) {
 }
 // every flat item has an ATK RANGE [lo, hi]; the roll happens at the strike. Multipliers are fixed.
 function span(c, sp) { const h = Math.round(c * sp); return [c - h, c + h]; }
-function openChest(chest, rng) {
+function openChest(chest, rng, stage = 0) {
   const R = RULES, el = chest.element;
   const flatItem = (kind, c, sp) => { const [lo, hi] = span(c, sp); return { kind, element: el, flat: c, lo, hi, mult: 0 }; };
   if (chest.type === 'wood') return flatItem(pick(rng, ['weapon', 'armor']), ri(rng, R.wood.min, R.wood.max), R.wood.spread);
@@ -27,14 +34,14 @@ function openChest(chest, rng) {
     if (rng() < R.gold.accChance) return { kind: 'accessory', element: el, flat: 0, lo: 0, hi: 0, mult: ri(rng, R.gold.multMin * 10, R.gold.multMax * 10) / 10 };
     return flatItem('weapon', ri(rng, R.gold.wMin, R.gold.wMax), R.gold.spread);
   }
-  if (rng() < R.black.goodChance) return flatItem('weapon', ri(rng, R.black.wMin, R.black.wMax), R.black.wSpread);
+  if (rng() < R.black.goodByStage[Math.min(stage, R.black.goodByStage.length - 1)]) return flatItem('weapon', ri(rng, R.black.wMin, R.black.wMax), R.black.wSpread);
   const c = ri(rng, R.black.cMin, R.black.cMax), [a, b] = span(c, R.black.cSpread);
   return { kind: 'cursed', element: el, flat: -c, lo: -b, hi: -a, mult: 0 };
 }
 // rng given -> roll every item inside its range; no rng -> use the average (for previews)
 function rollItem(it, rng) { return it.lo === it.hi ? it.lo : rng ? ri(rng, it.lo, it.hi) : (it.lo + it.hi) / 2; }
 function computeDamage(items, rng) {
-  let flat = 0, mult = 0; const cnt = { Fire: 0, Ice: 0, Thunder: 0 };
+  let flat = RULES.baseAtk, mult = 0; const cnt = { Fire: 0, Ice: 0, Thunder: 0 };
   const rolls = items.map((it) => rollItem(it, rng));
   items.forEach((it, i) => { flat += rolls[i]; mult += it.mult; if (cnt[it.element] !== undefined) cnt[it.element]++; });
   let setEl = null; for (const e of ELEMENTS) if (cnt[e] >= RULES.setCount && (!setEl || cnt[e] > cnt[setEl])) setEl = e;
@@ -82,6 +89,24 @@ const RARITY = {
   LEGENDARY: { css: '#ffcf40', col: 0xffcf40, n: 60, shake: 0.012 },
   CURSED: { css: '#ff6a8a', col: 0x9a3aff, n: 44, shake: 0.012 },
 };
+
+// Bosses (all CC0 by ansimuz). fw/fh = frame size; head/mouth/body in frame pixels (they all face left).
+const BOSSES = [
+  { tex: 'hound_idle', anim: 'hound-idle', fw: 64, fh: 32, scale: 4.5, x: 930, head: [15, 16], mouth: [12, 20], body: [30, 40], col: '#ff9a5a' },
+  { tex: 'beast_idle', anim: 'beast-idle', fw: 55, fh: 67, scale: 3.4, x: 925, head: [21, 28], mouth: [19, 32], body: [28, 46], col: '#ff6a5a' },
+  { tex: 'dragon_idle', anim: 'dragon-idle', fw: 144, fh: 64, scale: 4, x: 900, head: [70, 34], mouth: [66, 28], body: [95, 71], col: '#ff8a6a' },
+];
+// Strike feedback grows with damage / boss HP. L0 = not enough, L1 = kill, L2 = x2, L3 = x5, L4 = x10
+const OK_TIERS = [
+  { at: 0, label: 'NOT ENOUGH', font: 72, shake: 0.012, stop: 60, n: 0.6, col: 0xff5a4a, css: '#ff6a5a', snd: null },
+  { at: 1, label: 'KILL!', font: 84, shake: 0.025, stop: 90, n: 1, col: 0xffd36a, css: '#ffd36a', snd: 'hit' },
+  { at: 2, label: 'OVERKILL', font: 100, shake: 0.035, stop: 160, n: 1.6, col: 0xffa040, css: '#ffb24a', snd: 'smash' },
+  { at: 5, label: 'MEGA OVERKILL', font: 118, shake: 0.05, stop: 260, n: 2.4, col: 0xff4a8a, css: '#ff7ab0', snd: 'boom' },
+  { at: 10, label: 'GODLIKE', font: 138, shake: 0.07, stop: 380, n: 3.4, col: 0xc080ff, css: '#e0b8ff', snd: 'nuke' },
+];
+function okLevel(dmg, hp) { let L = 0; OK_TIERS.forEach((t, i) => { if (i && dmg >= t.at * hp) L = i; }); return L; }
+const okLabel = (L, ratio) => L >= 2 ? `${OK_TIERS[L].label} x${ratio >= 10 ? Math.floor(ratio) : ratio.toFixed(1)}` : OK_TIERS[L].label;
+const fmt = (n) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 
 // ===== PHASER =====
 const W = 1200, H = 628;
@@ -242,14 +267,16 @@ class Boot extends Phaser.Scene {
     this.load.spritesheet('icons', I + 'icons.png', { frameWidth: 34, frameHeight: 34 });
     this.load.spritesheet('dragon_idle', I + 'dragon_idle.png', { frameWidth: 144, frameHeight: 64 });
     this.load.spritesheet('dragon_breath', I + 'dragon_breath.png', { frameWidth: 144, frameHeight: 64 });
+    this.load.spritesheet('hound_idle', I + 'hound_idle.png', { frameWidth: 64, frameHeight: 32 });
+    this.load.spritesheet('beast_idle', I + 'beast_idle.png', { frameWidth: 55, frameHeight: 67 });
     this.load.spritesheet('hero_idle', I + 'hero_idle.png', { frameWidth: 64, frameHeight: 64 });
     this.load.spritesheet('hero_run', I + 'hero_run.png', { frameWidth: 64, frameHeight: 64 });
     this.load.spritesheet('hero_attack', I + 'hero_attack.png', { frameWidth: 64, frameHeight: 64 });
-    ['click', 'open', 'rare', 'curse', 'swing', 'hit', 'win', 'lose', 'music', 'epic', 'legendary', 'charge', 'banner', 'tick', 'victory', 'defeat'].forEach((k) => this.load.audio(k, A + k + '.mp3'));
+    ['click', 'open', 'rare', 'curse', 'swing', 'hit', 'win', 'lose', 'music', 'epic', 'legendary', 'charge', 'banner', 'tick', 'victory', 'defeat', 'smash', 'boom', 'nuke', 'shatter', 'stage'].forEach((k) => this.load.audio(k, A + k + '.mp3'));
   }
   create() {
     const a = (key, tex, rate, repeat = -1) => this.anims.create({ key, frames: this.anims.generateFrameNumbers(tex), frameRate: rate, repeat });
-    a('dragon-idle', 'dragon_idle', 8); a('dragon-breath', 'dragon_breath', 12, 0);
+    a('dragon-idle', 'dragon_idle', 8); a('hound-idle', 'hound_idle', 9); a('beast-idle', 'beast_idle', 8); a('dragon-breath', 'dragon_breath', 12, 0);
     a('hero-idle', 'hero_idle', 3); a('hero-run', 'hero_run', 16); a('hero-attack', 'hero_attack', 14, 0);
     // generated FX textures
     const g = this.make.graphics({ x: 0, y: 0, add: false });
@@ -272,8 +299,8 @@ class Title extends Phaser.Scene {
     heroGlow(this.add.sprite(W / 2 - 300, LAVA_GROUND, 'hero_idle').setScale(3).setOrigin(0.5, 1).play('hero-idle'));
     panel(this, W / 2 - 330, 22, 660, 170);
     txt(this, W / 2, 82, 'DRAGON CHEST', 80, '#ffd36a', { strokeThickness: 10 });
-    txt(this, W / 2, 142, 'Open 8 chests. Strike the dragon ONCE.', 28, '#ffffff');
-    txt(this, W / 2, 175, 'Kill it, or get eaten.', 22, '#ff9a7a');
+    txt(this, W / 2, 142, '3 bosses. 3 chests each. ONE strike per boss.', 28, '#ffffff');
+    txt(this, W / 2, 175, 'Your loot stacks up. Kill them, or get eaten.', 22, '#ff9a7a');
     const tap = txt(this, W / 2, 575, '▶  TAP TO START', 40, '#fff2c0');
     this.tweens.add({ targets: tap, alpha: 0.35, yoyo: true, repeat: -1, duration: 650 });
     this.input.once('pointerup', () => {
@@ -293,25 +320,26 @@ class Title extends Phaser.Scene {
       startMusic();
       setTimeout(startMusic, 600);
       sfx(this, 'click');
-      this.scene.start('pick', { round: 0, items: [] });
+      this.scene.start('intro', { stage: 0, items: [], log: [] });
     });
   }
 }
 
 class Pick extends Phaser.Scene {
   constructor() { super('pick'); }
-  init(data) { this.round = data.round; this.items = data.items; this.locked = false; this.done = false; this.canSkip = false; this.autoNext = null; this.dim = null; }
+  init(data) { this.round = data.round; this.items = data.items; this.log = data.log || []; this.stage = Math.floor(this.round / RULES.picksPerStage); this.locked = false; this.done = false; this.canSkip = false; this.autoNext = null; this.dim = null; }
   create() {
-    window.DC.phase = 'pick'; window.DC.round = this.round + 1; window.DC.reveal = null;
+    window.DC.phase = 'pick'; window.DC.round = this.round + 1; window.DC.stage = this.stage + 1; window.DC.reveal = null;
     this.tweens.timeScale = 1; this.time.timeScale = 1;
     fadeInMain(this);
     backdrop(this, 'bg_hoard', 0.45);
-    panel(this, 250, 14, 360, 92);
-    txt(this, 430, 46, `CHEST ${this.round + 1} / ${RULES.rounds}`, 40, '#ffd36a');
-    txt(this, 430, 84, 'Pick one', 22, '#f0e6ff');
+    const st = RULES.stages[this.stage], k = this.round % RULES.picksPerStage;
+    panel(this, 170, 12, 520, 98);
+    txt(this, 430, 44, `STAGE ${this.stage + 1}/${RULES.stages.length}  ·  CHEST ${k + 1}/${RULES.picksPerStage}`, 34, '#ffd36a');
+    txt(this, 430, 84, `Pick one  ·  next: ${st.name}  HP ${fmt(st.hp)}`, 20, '#f0e6ff', { strokeThickness: 4 });
     this.tip = new Tooltip(this, () => this.items);
     this.drawInventory();
-    this.offer = rollOffer(Math.random);
+    this.offer = rollOffer(Math.random); window.DC.offer = this.offer.map((o) => o.type);
     const xs = [170, 430, 690], base = 390;
     this.chests = this.offer.map((c, i) => {
       const x = xs[i];
@@ -335,33 +363,35 @@ class Pick extends Phaser.Scene {
   }
   drawInventory() {
     const x0 = 880, y0 = 150;
-    panel(this, x0 - 18, y0 - 30, 334, 486);
-    txt(this, x0 + 149, y0 - 2, 'BAG', 26, '#ffd36a');
+    panel(this, x0 - 18, y0 - 30, 334, 488);
+    this.bagT = txt(this, x0 + 149, y0 - 2, '', 24, '#ffd36a');
     this.counters = ELEMENTS.map((el, k) => {
       const cx = x0 - 4 + k * 98;
-      this.add.star(cx + 6, y0 + 30, 4, 4, 9, EL_COLOR[el]).setStrokeStyle(2, 0x000000);
-      return this.add.text(cx + 16, y0 + 30, '', { fontFamily: FONT, fontSize: '16px', color: EL_CSS[el], fontStyle: 'bold', stroke: '#140812', strokeThickness: 3 }).setOrigin(0, 0.5);
+      this.add.star(cx + 6, y0 + 28, 4, 4, 9, EL_COLOR[el]).setStrokeStyle(2, 0x000000);
+      return this.add.text(cx + 16, y0 + 28, '', { fontFamily: FONT, fontSize: '16px', color: EL_CSS[el], fontStyle: 'bold', stroke: '#140812', strokeThickness: 3 }).setOrigin(0, 0.5);
     });
     this.updateCounters();
     for (let i = 0; i < RULES.rounds; i++) this.addInvRow(i, this.items[i]);
   }
   updateCounters() {
+    this.bagT.setText(`BAG  ${this.items.length}/${RULES.rounds}`);
     ELEMENTS.forEach((el, k) => {
       const n = elemCount(this.items, el);
       this.counters[k].setText(`${el} ${Math.min(n, RULES.setCount)}/${RULES.setCount}`).setColor(n >= RULES.setCount ? '#ffffff' : EL_CSS[el]);
     });
   }
   addInvRow(i, it) {
-    const x0 = 880, y = 226 + i * 48;
-    if (!it) { this.add.rectangle(x0 + 21, y, 40, 40, 0xffffff, 0.06).setStrokeStyle(1, 0x5a4a3a); return; }
-    this.add.rectangle(x0 + 21, y, 42, 42, itemCol(it), 0.3).setStrokeStyle(2, itemCol(it));
+    const x0 = 880, y = 220 + i * 42;
+    if (!it) { this.add.rectangle(x0 + 21, y, 36, 36, 0xffffff, 0.06).setStrokeStyle(1, 0x5a4a3a); return; }
+    this.add.rectangle(x0 + 21, y, 38, 38, itemCol(it), 0.3).setStrokeStyle(2, itemCol(it));
     this.tip.attach(this.add.image(x0 + 21, y, 'icons', it.frame), it);
-    const nm = it.name.length > 22 ? it.name.slice(0, 21) + '…' : it.name;
-    this.add.text(x0 + 50, y - 19, nm, { fontFamily: FONT, fontSize: '17px', color: '#ffffff', fontStyle: 'bold' });
-    this.add.text(x0 + 50, y + 1, ruleText(it), { fontFamily: FONT, fontSize: '16px', color: it.kind === 'cursed' ? '#ff7a8a' : it.mult ? '#ffd84a' : '#b8f0a0' });
+    const nm = it.name.length > 24 ? it.name.slice(0, 23) + '…' : it.name;
+    this.add.text(x0 + 46, y - 18, nm, { fontFamily: FONT, fontSize: '16px', color: '#ffffff', fontStyle: 'bold' });
+    this.add.text(x0 + 46, y + 1, ruleText(it), { fontFamily: FONT, fontSize: '15px', color: it.kind === 'cursed' ? '#ff7a8a' : it.mult ? '#ffd84a' : '#b8f0a0' });
   }
   forcedItem(ch) { // test hook: DC.force = 'EPIC' | 'LEGENDARY'
     const f = window.DC.force; if (!f) return null; window.DC.force = null;
+    if (f === 'CURSED') { const [a, b] = span(105, RULES.black.cSpread); return { kind: 'cursed', element: ch.c.element, flat: -105, lo: -b, hi: -a, mult: 0 }; }
     const c = f === 'LEGENDARY' ? 270 : 200, [lo, hi] = span(c, RULES.black.wSpread);
     return { kind: 'weapon', element: ch.c.element, flat: c, lo, hi, mult: 0 };
   }
@@ -370,7 +400,7 @@ class Pick extends Phaser.Scene {
     const ch = this.chests[i];
     this.chests.forEach((o, j) => { o.zone.disableInteractive(); o.sp.stop(); if (j !== i) { this.tweens.killTweensOf([o.spr, o.glow, o.gem]); this.tweens.add({ targets: [o.spr, o.glow, o.gem, o.label, o.el], alpha: 0.12, duration: 250 }); } });
     sfx(this, 'click');
-    const it = nameItem(this.forcedItem(ch) || openChest(ch.c, Math.random));
+    const it = nameItem(this.forcedItem(ch) || openChest(ch.c, Math.random, this.stage));
     const tier = it.rarity, R = RARITY[tier], big = tier === 'EPIC' || tier === 'LEGENDARY', leg = tier === 'LEGENDARY';
     window.DC.reveal = { rarity: tier, stage: 'anticipation' };
     this.tweens.killTweensOf([ch.spr, ch.glow]); ch.spr.setScale(5).setDepth(11); ch.glow.setDepth(11);
@@ -524,174 +554,371 @@ class Pick extends Phaser.Scene {
     this.done = true; if (this.tip) this.tip.hide(true);
     this.tweens.timeScale = 1; this.time.timeScale = 1; this.tweens.resumeAll(); this.anims.resumeAll();
     if (this.autoNext) this.autoNext.remove();
-    if (this.round + 1 >= RULES.rounds) this.scene.start('strike', { items: this.items });
-    else this.scene.start('pick', { round: this.round + 1, items: this.items });
+    const r = this.round + 1;
+    if (r % RULES.picksPerStage === 0) this.scene.start('strike', { stage: r / RULES.picksPerStage - 1, items: this.items, log: this.log });
+    else this.scene.start('pick', { round: r, items: this.items, log: this.log });
+  }
+}
+
+// Stage card before each stage's chests: who is next, how much HP, gear carried over
+class Intro extends Phaser.Scene {
+  constructor() { super('intro'); }
+  init(d) { this.stage = d.stage; this.items = d.items; this.log = d.log || []; this.gone = false; }
+  create() {
+    window.DC.phase = 'intro'; window.DC.stage = this.stage + 1;
+    this.tweens.timeScale = 1; this.time.timeScale = 1;
+    fadeInMain(this);
+    const st = RULES.stages[this.stage], c = BOSSES[this.stage], last = this.stage === RULES.stages.length - 1;
+    backdrop(this, 'bg_lava', 0.55);
+    this.add.image(W / 2, H / 2, 'vig').setDisplaySize(W + 40, H + 40).setAlpha(0.9);
+    const bx = 860, sc = c.scale * (this.stage === 2 ? 0.8 : 1);
+    shadow(this, bx + (c.body[0] - c.fw / 2) * sc, LAVA_GROUND, c.body[1] * sc * 1.05);
+    const boss = this.add.sprite(bx + 260, LAVA_GROUND, c.tex).setScale(sc).setOrigin(0.5, 1).play(c.anim).setAlpha(0);
+    this.tweens.add({ targets: boss, x: bx, alpha: 1, duration: 520, ease: 'Back.out' });
+    try { if (boss.preFX) boss.preFX.addGlow(Phaser.Display.Color.HexStringToColor(c.col).color, 2, 0, false, 0.1, 8); } catch (e) {}
+    // stage pips
+    for (let k = 0; k < RULES.stages.length; k++) {
+      const done = k < this.stage, cur = k === this.stage;
+      const pip = this.add.star(330 + (k - 1) * 70, 70, 5, 10, 24, done ? 0x8aff7a : cur ? 0xffd36a : 0x4a3a5a).setStrokeStyle(3, 0x140812);
+      if (cur) this.tweens.add({ targets: pip, scale: 1.25, yoyo: true, repeat: -1, duration: 420 });
+    }
+    const t1 = txt(this, 330, 150, `STAGE ${this.stage + 1} / ${RULES.stages.length}`, 72, '#ffd36a', { strokeThickness: 10 });
+    popText(this, t1, 1);
+    try { if (t1.preFX) t1.preFX.addShine(0.8, 0.3, 4); } catch (e) {}
+    const t2 = txt(this, 330, 236, st.name, 50, c.col, { strokeThickness: 8 }); t2.setAlpha(0);
+    this.tweens.add({ targets: t2, alpha: 1, x: { from: 250, to: 330 }, duration: 380, delay: 200, ease: 'Quad.out' });
+    const t3 = txt(this, 330, 296, `HP ${fmt(st.hp)}`, 40, '#ff5a4a'); t3.setAlpha(0);
+    this.tweens.add({ targets: t3, alpha: 1, duration: 300, delay: 420 });
+    txt(this, 330, 360, `Open ${RULES.picksPerStage} chests, then strike ONCE.`, 26, '#ffffff');
+    txt(this, 330, 398, this.items.length ? `Your ${this.items.length} items carry over.` : 'Everything you find stays with you.', 22, '#b8f0a0', { strokeThickness: 4 });
+    if (last) txt(this, 330, 434, 'Final boss. Make it count.', 22, '#ff9a7a', { strokeThickness: 4 });
+    const tap = txt(this, 330, 520, '▶  TAP TO CONTINUE', 30, '#fff2c0');
+    this.tweens.add({ targets: tap, alpha: 0.35, yoyo: true, repeat: -1, duration: 600 });
+    sfx(this, 'stage', 0.7); if (this.stage) sfx(this, 'charge', 0.4);
+    this.cameras.main.fadeIn(300, 0, 0, 0);
+    this.time.delayedCall(600, () => this.input.once('pointerdown', () => this.go()));
+    this.time.delayedCall(4200, () => this.go());
+  }
+  go() {
+    if (this.gone) return; this.gone = true;
+    this.scene.start('pick', { round: this.stage * RULES.picksPerStage, items: this.items, log: this.log });
   }
 }
 
 class Strike extends Phaser.Scene {
   constructor() { super('strike'); }
-  init(d) { this.items = d.items; this.struck = false; }
+  init(d) {
+    this.stage = d.stage; this.items = d.items; this.log = d.log || []; this.struck = false;
+    this.cfg = BOSSES[this.stage]; this.st = RULES.stages[this.stage]; this.hpMax = this.st.hp;
+  }
   create() {
-    window.DC.phase = 'strike';
+    window.DC.phase = 'strike'; window.DC.stage = this.stage + 1; window.DC.overkill = 0; window.DC.popped = 0;
+    this.tweens.timeScale = 1; this.time.timeScale = 1;
+    fadeInMain(this);
     backdrop(this, 'bg_lava', 0.12);
-    this.res = computeDamage(this.items, Math.random); // each item rolls inside its ATK range
-    window.DC.result = this.res;
+    const res = this.res = computeDamage(this.items, Math.random); // each item rolls inside its ATK range
+    res.ratio = res.total / this.hpMax; res.L = okLevel(res.total, this.hpMax); res.hp = this.hpMax;
+    window.DC.result = res;
     this.tip = new Tooltip(this, () => this.items);
-    this.dShadow = shadow(this, 900 + 94, LAVA_GROUND, 290);
+    const c = this.cfg;
+    this.bShadow = shadow(this, c.x, LAVA_GROUND, c.body[1] * c.scale * 1.05);
     this.hShadow = shadow(this, 230, LAVA_GROUND, 90);
-    this.dragon = this.add.sprite(900, LAVA_GROUND, 'dragon_idle').setScale(4).setOrigin(0.5, 1).play('dragon-idle');
+    this.boss = this.add.sprite(c.x, LAVA_GROUND, c.tex).setScale(c.scale).setOrigin(0.5, 1).play(c.anim);
     this.hero = this.add.sprite(230, LAVA_GROUND, 'hero_idle').setScale(3).setOrigin(0.5, 1).play('hero-idle');
     heroGlow(this.hero);
-    panel(this, 640, 30, 440, 120);
-    txt(this, 860, 66, 'ANCIENT DRAGON', 34, '#ff8a6a');
-    this.add.rectangle(860, 112, 400, 28, 0x220000).setStrokeStyle(3, 0xffd36a);
-    this.hp = this.add.rectangle(662, 112, 396, 22, 0xd22a2a).setOrigin(0, 0.5);
-    this.hpText = txt(this, 860, 112, `${RULES.dragonHP} / ${RULES.dragonHP}`, 20);
-    panel(this, 8, 560, 8 * 50 + 16, 60);
+    panel(this, 640, 14, 440, 140);
+    txt(this, 860, 40, `STAGE ${this.stage + 1} / ${RULES.stages.length}`, 20, '#ffd36a', { strokeThickness: 4 });
+    txt(this, 860, 76, this.st.name, 34, c.col);
+    this.add.rectangle(860, 120, 400, 28, 0x220000).setStrokeStyle(3, 0xffd36a);
+    this.hp = this.add.rectangle(662, 120, 396, 22, 0xd22a2a).setOrigin(0, 0.5);
+    this.hpText = txt(this, 860, 120, `${fmt(this.hpMax)} / ${fmt(this.hpMax)}`, 20);
+    panel(this, 8, 560, this.items.length * 50 + 16, 60);
     this.items.forEach((it, i) => {
       this.add.rectangle(40 + i * 50, 590, 42, 42, itemCol(it), 0.3).setStrokeStyle(2, itemCol(it));
       this.tip.attach(this.add.image(40 + i * 50, 590, 'icons', it.frame), it);
     });
-    this.ready = txt(this, 250, 190, 'Your gear is ready.', 28);
+    this.ready = txt(this, 250, 190, `Your ${this.items.length} items are ready.`, 28);
     this.btn = button(this, 250, 262, 'STRIKE!', () => this.strike(), 240);
     window.DC.phase = 'strike-ready';
   }
   update() { // shadows stay glued to the feet
     if (this.hero) { this.hShadow.x = this.hero.x; this.hShadow.setVisible(this.hero.visible && this.hero.alpha > 0.2); this.hShadow.scaleX = this.hero.scaleX / 3; }
-    if (this.dragon) this.dShadow.x = this.dragon.x + 94 * this.dragon.scaleX / 4;
+    if (this.boss && this.boss.active) { const c = this.cfg, k = this.boss.scaleX; this.bShadow.x = this.boss.x + (c.body[0] - c.fw / 2) * k; this.bShadow.scaleX = k / c.scale; }
   }
-  mouth() { return { x: this.dragon.x - 288 + 66 * 4, y: LAVA_GROUND - 36 * 4 }; }
+  pt(p) { const c = this.cfg; return { x: c.x + (p[0] - c.fw / 2) * c.scale, y: LAVA_GROUND - (c.fh - p[1]) * c.scale }; }
+  head() { return this.pt(this.cfg.head); }
   strike() {
     if (this.struck) return; this.struck = true; window.DC.phase = 'striking';
     this.btn.destroy(); this.ready.destroy();
     this.tip.hide(true);
-    this.rollSeq(() => this.charge());
-  }
-  // show every item's roll ticking up inside its range, then the total
-  rollSeq(done) {
-    window.DC.phase = 'rolling';
-    const r = this.res, its = this.items, n = its.length, rowH = 31, top = 84, x0 = 20, w = 600;
-    const h = top - 16 + n * rowH + 64;
-    const box = this.add.container(0, 0).setDepth(50);
-    box.add(panel(this, x0, 16, w, h));
-    box.add(txt(this, x0 + w / 2, 46, 'ROLLING YOUR GEAR', 28, '#ffd36a'));
-    const st = (x, y, t, size, col, ox = 0) => this.add.text(x, y, t, { fontFamily: FONT, fontSize: size + 'px', color: col, fontStyle: 'bold', stroke: '#140812', strokeThickness: 3 }).setOrigin(ox, 0.5);
-    let sum = 0, mult = 0;
-    const foot = txt(this, x0 + w / 2, 16 + h - 32, 'ATK 0', 30, '#ffffff'); box.add(foot);
-    const footText = () => `ATK ${Math.max(0, Math.round(sum))}` + (mult ? `   x${(1 + mult).toFixed(1)}` : '');
-    const step = 190;
-    its.forEach((it, i) => {
-      const y = top + i * rowH, col = it.kind === 'cursed' ? '#ff7a8a' : it.mult ? '#ffd84a' : '#b8f0a0';
-      const ic = this.add.image(x0 + 28, y, 'icons', it.frame).setScale(0.8).setAlpha(0.35);
-      const nm = st(x0 + 50, y, it.name.length > 24 ? it.name.slice(0, 23) + '…' : it.name, 17, '#ffffff').setAlpha(0.35);
-      const rg = st(x0 + 440, y, it.mult ? 'no roll' : it.kind === 'cursed' ? `${it.hi} to ${it.lo}` : `${it.lo}–${it.hi}`, 16, '#bba8d0', 1).setAlpha(0.35);
-      const val = st(x0 + w - 22, y, '', 22, col, 1);
-      box.add([ic, nm, rg, val]);
-      this.time.delayedCall(250 + i * step, () => {
-        [ic, nm, rg].forEach((o) => o.setAlpha(1));
-        if (it.mult) { val.setText(`+${it.mult.toFixed(1)}x`); mult += it.mult; foot.setText(footText()); popText(this, val, 1); sfx(this, 'tick', 0.5); return; }
-        const c = { v: it.lo };
-        this.tweens.add({ targets: c, v: r.rolls[i], duration: 170, ease: 'Cubic.out',
-          onUpdate: () => val.setText((c.v >= 0 ? '+' : '') + Math.round(c.v)),
-          onComplete: () => { val.setText((r.rolls[i] >= 0 ? '+' : '') + r.rolls[i]); sum += r.rolls[i]; foot.setText(footText()); sfx(this, 'tick', 0.5); popText(this, val, 1);
-            const hi = it.hi === it.lo ? 1 : (r.rolls[i] - it.lo) / (it.hi - it.lo); if (it.kind !== 'cursed' && hi >= 0.85) val.setColor('#ffffff'); } });
-      });
-    });
-    this.time.delayedCall(250 + n * step + 250, () => {
-      const parts = [`ATK ${r.flat}`, `x${(1 + r.mult).toFixed(1)}`]; if (r.set > 1) parts.push(`x${r.set} ${r.setEl} set`);
-      foot.setText(parts.join('  ') + `  =  ${r.total}`).setColor('#ffd36a'); popText(this, foot, 1); sfx(this, 'banner', 0.5);
-      window.DC.phase = 'rolled';
-      this.time.delayedCall(1000, () => this.tweens.add({ targets: box, alpha: 0, duration: 250, onComplete: () => { box.destroy(); done(); } }));
-    });
+    this.charge();
   }
   charge() {
     window.DC.phase = 'striking';
-    const r = this.res, win = r.total >= RULES.dragonHP;
+    const r = this.res, hd = this.head();
     this.hero.play('hero-run');
-    this.cameras.main.zoomTo(1.12, 500, 'Sine.easeInOut');
-    this.cameras.main.pan(700, 380, 500, 'Sine.easeInOut');
+    this.cameras.main.zoomTo(1.06, 500, 'Sine.easeInOut');
+    this.cameras.main.pan(W / 2 + 40, 330, 500, 'Sine.easeInOut');
     this.tweens.add({
-      targets: this.hero, x: 760, duration: 470, ease: 'Quad.in', onComplete: () => {
+      targets: this.hero, x: hd.x - 130, duration: 470, ease: 'Quad.in', onComplete: () => {
         sfx(this, 'swing');
         this.hero.play('hero-attack');
-        this.time.delayedCall(140, () => this.impact(r, win));
+        this.time.delayedCall(140, () => this.impact(r));
         this.hero.once('animationcomplete', () => this.hero.play('hero-idle'));
       },
     });
   }
-  head() { return { x: this.dragon.x - 288 + 70 * 4, y: LAVA_GROUND - 30 * 4 }; } // dragon faces left; head ~ frame (70,34)
-  slash(x, y) { // crescent arcs centred on the head
+  lite() { return this.scale.displaySize.width < 700 ? 0.6 : 1; }
+  hitStop(ms) { // freeze everything for a beat (real time)
+    this.tweens.pauseAll(); this.anims.pauseAll();
+    setTimeout(() => { if (this.tweens) { this.tweens.resumeAll(); this.anims.resumeAll(); } }, ms);
+  }
+  ring(x, y, col, w, to, delay = 0, dur = 650) {
+    const r = this.add.circle(x, y, 30).setStrokeStyle(w, col, 1).setDepth(40).setBlendMode(Phaser.BlendModes.ADD);
+    r.isFilled = false;
+    this.tweens.add({ targets: r, scale: to, alpha: { from: 1, to: 0 }, delay, duration: dur, ease: 'Cubic.out', onComplete: () => r.destroy() });
+  }
+  impact(r) {
+    window.DC.phase = 'impact';
+    const L = r.L, cam = this.cameras.main, hd = this.head(), N = (n) => Math.max(4, Math.round(n * this.lite()));
+    window.DC.head = hd;
+    sfx(this, 'hit', 0.9);
+    cam.shake(300, 0.02); cam.flash(140, 255, 255, 255);
+    this.boss.setTintFill(0xffffff); this.time.delayedCall(110, () => this.boss.clearTint());
+    this.slash(hd.x, hd.y);
+    burst(this, hd.x, hd.y, 0xffd36a, N(40), 380).setDepth(41);
+    burst(this, hd.x, hd.y, 0xff5a2a, N(20), 280, 'px').setDepth(41);
+    this.hitStop(90);
+    // live damage counter (nothing is revealed before the blade lands)
+    const TX = this.TX = 500, TY = this.TY = 180;
+    this.rays = this.add.image(TX, TY, 'rays').setTint(0xffd36a).setBlendMode(Phaser.BlendModes.ADD).setDepth(43).setScale(0).setAlpha(0);
+    this.tweens.add({ targets: this.rays, angle: 360, duration: 6000, repeat: -1 });
+    txt(this, TX, TY - 66, 'DAMAGE', 22, '#ffe8b0', { strokeThickness: 5 }).setDepth(46);
+    this.dmg = txt(this, TX, TY, '0', 84, '#ffffff', { strokeThickness: 12 }).setDepth(46);
+    popText(this, this.dmg, 1);
+    this.br = txt(this, TX, TY + 56, '', 20, '#ffffff', { strokeThickness: 4 }).setDepth(45);
+    this.dmgScale = 1; this.shown = 0;
+    // damage steps: hero's swing, every flat item's roll, then multipliers, then the set bonus
+    const its = this.items, steps = [{ kind: 'base', v: RULES.baseAtk }];
+    its.forEach((it, i) => { if (!it.mult) steps.push({ kind: 'flat', it, v: r.rolls[i] }); });
+    its.forEach((it) => { if (it.mult) steps.push({ kind: 'mult', it, v: it.mult }); });
+    if (r.set > 1) steps.push({ kind: 'set', v: r.set });
+    let flat = 0, mult = 0, set = 1, shown = 0, next = 1;
+    const value = () => Math.round(Math.max(0, Math.round(flat)) * (1 + Math.round(mult * 10) / 10) * set);
+    const show = (v) => {
+      this.dmg.setText(fmt(v));
+      const left = Math.max(0, this.hpMax - v);
+      this.hp.width = 396 * left / this.hpMax; this.hpText.setText(`${fmt(left)} / ${fmt(this.hpMax)}`);
+      while (next <= L && v >= OK_TIERS[next].at * this.hpMax) { this.pulse(next, v); next++; }
+    };
+    window.DC.popped = 0;
+    const runStep = (k) => {
+      if (k >= steps.length) return this.afterCount(r, show, () => next);
+      const s = steps[k];
+      if (s.kind === 'base' || s.kind === 'flat') flat += s.v; else if (s.kind === 'mult') mult += s.v; else set = s.v;
+      const target = k === steps.length - 1 ? r.total : value();
+      this.popNumber(s, k);
+      window.DC.popped = k + 1;
+      const c = { v: shown }, gap = Math.max(130, 300 - k * 22);
+      this.tweens.add({ targets: c, v: target, duration: gap * 0.8, ease: 'Cubic.out', onUpdate: () => show(Math.round(c.v)),
+        onComplete: () => { shown = target; show(target); } });
+      this.time.delayedCall(gap, () => runStep(k + 1));
+    };
+    this.time.delayedCall(260, () => runStep(0));
+    this.tweens.add({ targets: this.hero, x: hd.x - 300, duration: 500, delay: 300, ease: 'Quad.out' });
+  }
+  // one floating number bursting out of the boss
+  popNumber(s, k) {
+    const hd = this.head(), x = hd.x + ((k % 3) - 1) * 85 + Phaser.Math.Between(-15, 15), y = hd.y - 30 - (k % 2) * 55 + Phaser.Math.Between(-10, 10);
+    let label, col, size;
+    if (s.kind === 'base') { label = `+${s.v}`; col = '#ffffff'; size = 30; }
+    else if (s.kind === 'flat') {
+      const neg = s.v < 0; label = (neg ? '' : '+') + s.v;
+      col = neg ? '#c890ff' : EL_CSS[s.it.element]; size = Math.round(28 + Math.min(30, Math.abs(s.v) / 9));
+    } else if (s.kind === 'mult') { label = `+${s.v.toFixed(1)}x`; col = '#ffd84a'; size = 44; }
+    else { label = `x${s.v} SET!`; col = '#ffffff'; size = 56; }
+    const t = txt(this, x, y, label, size, col, { strokeThickness: Math.max(6, size / 6) }).setDepth(44);
+    t.setScale(0.2);
+    this.tweens.add({ targets: t, scale: 1, duration: 140, ease: 'Back.out' });
+    this.tweens.add({ targets: t, y: y - 90 - Phaser.Math.Between(0, 40), x: x + Phaser.Math.Between(-30, 30), alpha: { from: 1, to: 0 }, delay: 260, duration: 700, ease: 'Quad.in', onComplete: () => t.destroy() });
+    // the boss flinches with every number
+    const neg = s.kind === 'flat' && s.v < 0;
+    this.boss.setTintFill(neg ? 0x9a3aff : 0xffffff); this.time.delayedCall(60, () => this.boss.clearTint());
+    this.tweens.add({ targets: this.boss, x: this.cfg.x + (neg ? -4 : 6), yoyo: true, duration: 45 });
+    burst(this, x, y, neg ? CURSE_COL : s.kind === 'mult' || s.kind === 'set' ? 0xffd84a : (s.it ? EL_COLOR[s.it.element] : 0xffffff), Math.max(4, Math.round((s.kind === 'set' ? 30 : 12) * this.lite())), 240, 'px').setDepth(43);
+    sfx(this, neg ? 'curse' : s.kind === 'set' || s.kind === 'mult' ? 'banner' : 'tick', neg ? 0.35 : s.kind === 'set' ? 0.7 : 0.55);
+    if (s.kind === 'set') { this.cameras.main.shake(200, 0.012); this.ring(x, y, 0xffd84a, 8, 5); }
+    else if (!neg && s.kind === 'flat' && s.v >= 150) { sfx(this, 'hit', 0.45); this.cameras.main.shake(120, 0.008); }
+  }
+  afterCount(r, show, getNext) {
+    show(r.total); this.dmg.setText(fmt(r.total));
+    const parts = [`ATK ${r.flat}`, `x${(1 + r.mult).toFixed(1)}`]; if (r.set > 1) parts.push(`x${r.set} ${r.setEl} set`);
+    this.br.setText(parts.join('   ') + `  =  ${fmt(r.total)}`);
+    this.finalLabel(r);
+    window.DC.phase = 'impact-done';
+    const L = r.L, cam = this.cameras.main;
+    this.time.delayedCall(800 + 220 * L, () => {
+      cam.zoomTo(1, 400); cam.pan(W / 2, H / 2, 400);
+      this.time.delayedCall(420, () => L >= 1 ? this.killSeq(r) : this.loseSeq());
+    });
+  }
+  // escalating hit at each overkill threshold
+  pulse(L, v) {
+    const T = OK_TIERS[L], cam = this.cameras.main, hd = this.head(), N = (n) => Math.max(4, Math.round(n * this.lite()));
+    this.shown = L; window.DC.overkill = L;
+    this.dmgScale = T.font / 84;
+    this.dmg.setColor(T.css);
+    this.tweens.killTweensOf(this.dmg);
+    this.dmg.setScale(this.dmgScale * 1.5);
+    this.tweens.add({ targets: this.dmg, scale: this.dmgScale, duration: 220, ease: 'Back.out' });
+    this.tweens.add({ targets: this.dmg, angle: { from: L % 2 ? -6 : 6, to: 0 }, duration: 260 });
+    if (L === 1) { // HP hits zero
+      sfx(this, 'hit', 1); sfx(this, 'banner', 0.5);
+      cam.shake(260, T.shake); cam.flash(120, 255, 240, 200);
+      this.hp.setFillStyle(0xffffff); this.time.delayedCall(90, () => this.hp.setFillStyle(0xd22a2a));
+      this.boss.setTintFill(0xff3030); this.time.delayedCall(120, () => this.boss.clearTint());
+      burst(this, hd.x, hd.y, T.col, N(40), 380).setDepth(41);
+      return;
+    }
+    // L >= 2: overkill tiers
+    sfx(this, T.snd, 0.75 + 0.08 * L); if (L >= 3) sfx(this, 'hit', 1);
+    this.hitStop(T.stop);
+    cam.shake(380 + L * 140, T.shake);
+    const fc = Phaser.Display.Color.IntegerToColor(T.col);
+    cam.flash(90 + L * 40, L === 4 ? 255 : fc.red, L === 4 ? 255 : fc.green, L === 4 ? 255 : fc.blue);
+    cam.zoomTo(1.06 + 0.04 * L, 90, 'Quad.out', true);
+    this.time.delayedCall(200, () => cam.zoomTo(1.06, 260, 'Sine.easeOut', true));
+    this.boss.setTintFill(0xffffff); this.time.delayedCall(80 + L * 30, () => this.boss.clearTint());
+    this.tweens.add({ targets: this.boss, x: this.boss.x + 10 * L, yoyo: true, duration: 70, repeat: 1 });
+    this.slash(hd.x, hd.y, 1 + 0.3 * (L - 1), T.col);
+    for (let k = 0; k < L - 1; k++) this.ring(hd.x, hd.y, T.col, 8 - k * 2, 5 + k * 3 + L * 2, k * 120, 600);
+    burst(this, hd.x, hd.y, T.col, N(40 * T.n), 300 + 120 * L).setDepth(41);
+    burst(this, hd.x, hd.y, 0xffffff, N(20 * T.n), 500 + 80 * L, 'px').setDepth(41);
+    this.rays.setTint(T.col); this.tweens.add({ targets: this.rays, scale: 1.2 + 0.5 * L, alpha: 0.35 + 0.12 * L, duration: 260, ease: 'Back.out' });
+    // overkill label for this tier
+    if (this.okT) this.okT.destroy();
+    const ratio = Math.max(OK_TIERS[L].at, v / this.hpMax);
+    this.okT = txt(this, this.TX, this.TY + 104, okLabel(L, ratio), 30 + 8 * L, T.css, { strokeThickness: 8, stroke: '#1a0410' }).setDepth(47);
+    try { if (this.okT.preFX) { this.okT.preFX.addGlow(T.col, 3, 0, false, 0.1, 10); if (L >= 3) this.okT.preFX.addShine(0.9, 0.35, 4); } } catch (e) {}
+    popText(this, this.okT, 1);
+    this.tweens.add({ targets: this.okT, angle: { from: -3, to: 3 }, yoyo: true, repeat: -1, duration: 300 });
+    if (L === 4) { // GODLIKE: screen-wide lightning-ish white beams
+      for (let k = 0; k < 5; k++) {
+        const b = this.add.image(hd.x + Phaser.Math.Between(-260, 260), LAVA_GROUND + 40, 'beam').setOrigin(0.5, 1).setTint(k % 2 ? 0xffffff : T.col)
+          .setBlendMode(Phaser.BlendModes.ADD).setDepth(42).setScale(0.6, 1.4).setAlpha(0);
+        this.tweens.add({ targets: b, alpha: { from: 1, to: 0 }, scaleX: 0.1, duration: 600, delay: k * 70, onComplete: () => b.destroy() });
+      }
+    }
+  }
+  finalLabel(r) {
+    const L = r.L;
+    if (L >= 2) { if (this.okT) this.okT.setText(okLabel(L, r.ratio)); }
+    else {
+      const t = txt(this, this.TX, this.TY + 100, L === 1 ? 'KILL!' : `NOT ENOUGH  (${fmt(r.total)} / ${fmt(this.hpMax)})`, L === 1 ? 46 : 30, OK_TIERS[L].css, { strokeThickness: 8 }).setDepth(47);
+      popText(this, t, 1); this.okT = t;
+    }
+    if (L >= 1) {
+      const over = r.total - this.hpMax;
+      if (over > 0) this.br.setText(`${this.br.text}   (+${fmt(over)} overkill)`);
+    }
+  }
+  slash(x, y, k0 = 1, col = 0xffd36a) { // crescent arcs centred on the head
     for (let k = 0; k < 3; k++) {
-      const g = this.add.graphics().setBlendMode(Phaser.BlendModes.ADD);
-      g.lineStyle(14 - k * 4, k === 0 ? 0xffffff : 0xffd36a, 1 - k * 0.25);
-      g.beginPath(); g.arc(x, y, 62 + k * 16, Phaser.Math.DegToRad(-150), Phaser.Math.DegToRad(30), false); g.strokePath();
+      const g = this.add.graphics().setBlendMode(Phaser.BlendModes.ADD).setDepth(40);
+      g.lineStyle((14 - k * 4) * k0, k === 0 ? 0xffffff : col, 1 - k * 0.25);
+      g.beginPath(); g.arc(x, y, (62 + k * 16) * k0, Phaser.Math.DegToRad(-150), Phaser.Math.DegToRad(30), false); g.strokePath();
       g.setAlpha(0);
       this.tweens.add({ targets: g, alpha: { from: 1, to: 0 }, duration: 380, delay: k * 50, onComplete: () => g.destroy() });
     }
   }
-  impact(r, win) {
-    sfx(this, 'hit', 0.9);
-    const cam = this.cameras.main;
-    cam.shake(450, 0.025); cam.flash(180, 255, 255, 255);
-    this.dragon.setTintFill(0xffffff); this.time.delayedCall(110, () => this.dragon.clearTint());
-    const hd = this.head(); window.DC.head = hd;
-    this.slash(hd.x, hd.y);
-    burst(this, hd.x, hd.y, 0xffd36a, 50, 420);
-    burst(this, hd.x, hd.y, 0xff5a2a, 30, 300, 'px');
-    // brief hit-stop for weight
-    this.anims.pauseAll(); this.time.delayedCall(90, () => this.anims.resumeAll());
-    const parts = [`ATK ${r.flat}`, `x${(1 + r.mult).toFixed(1)}`]; if (r.set > 1) parts.push(`x${r.set} ${r.setEl} set`);
-    const dmg = txt(this, 860, 230, '0', 84, '#ffd36a', { strokeThickness: 12 });
-    popText(this, dmg, 1);
-    const br = txt(this, 860, 172, parts.join('   '), 24, '#ffffff'); br.setScrollFactor(1);
-    const counter = { v: 0 };
-    this.tweens.add({
-      targets: counter, v: r.total, duration: 1300, ease: 'Cubic.out',
-      onUpdate: () => {
-        const v = Math.round(counter.v); dmg.setText(v);
-        const left = Math.max(0, RULES.dragonHP - v);
-        this.hp.width = 396 * left / RULES.dragonHP; this.hpText.setText(`${left} / ${RULES.dragonHP}`);
-      },
-      onComplete: () => {
-        popText(this, dmg, win ? 1.25 : 1);
-        this.time.delayedCall(450, () => { cam.zoomTo(1, 400); cam.pan(W / 2, H / 2, 400); this.time.delayedCall(420, () => win ? this.winSeq() : this.loseSeq()); });
-      },
-    });
-    this.tweens.add({ targets: this.hero, x: 520, duration: 500, delay: 450, ease: 'Quad.out' });
+  // blow the boss sprite apart into chunks of its current frame
+  shatter(cols, rows, power) {
+    const b = this.boss, c = this.cfg, f = b.frame, tex = b.texture, s = b.scaleX;
+    const cw = Math.ceil(c.fw / cols), ch = Math.ceil(c.fh / rows), x0 = b.x - c.fw * s / 2, y0 = b.y - c.fh * s;
+    const cx = this.pt(c.body ? [c.body[0], c.fh * 0.55] : [c.fw / 2, c.fh / 2]);
+    for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) {
+      const w = Math.min(cw, c.fw - i * cw), h = Math.min(ch, c.fh - j * ch); if (w <= 0 || h <= 0) continue;
+      const key = `${f.name}_sh${cols}_${i}_${j}`;
+      if (!tex.has(key)) tex.add(key, f.sourceIndex, f.cutX + i * cw, f.cutY + j * ch, w, h);
+      const px = x0 + (i * cw + w / 2) * s, py = y0 + (j * ch + h / 2) * s;
+      const p = this.add.image(px, py, tex.key, key).setScale(s).setDepth(30);
+      const ang = Math.atan2(py - cx.y, px - cx.x) + Phaser.Math.FloatBetween(-0.4, 0.4), sp = power * Phaser.Math.FloatBetween(0.5, 1.2);
+      this.tweens.add({ targets: p, x: px + Math.cos(ang) * sp, duration: 1300, ease: 'Quad.out' });
+      this.tweens.add({ targets: p, y: { value: py + Math.sin(ang) * sp - power * 0.5, duration: 450, ease: 'Quad.out' } });
+      this.tweens.add({ targets: p, y: LAVA_GROUND + 60, delay: 450, duration: 850, ease: 'Quad.in' });
+      this.tweens.add({ targets: p, angle: Phaser.Math.Between(-540, 540), alpha: { from: 1, to: 0 }, duration: 1300, ease: 'Quad.in', onComplete: () => p.destroy() });
+    }
+    b.setVisible(false); this.tweens.add({ targets: this.bShadow, alpha: 0, duration: 400 });
   }
-  winSeq() {
-    sfx(this, 'win'); this.dragon.stop();
-    this.cameras.main.flash(300, 255, 230, 150); this.cameras.main.shake(500, 0.02);
-    for (let k = 0; k < 4; k++) this.time.delayedCall(k * 150, () => burst(this, this.dragon.x - 60 + k * 50, LAVA_GROUND - 120, 0xffcf40, 40, 380));
-    this.dragon.setTint(0x777777);
-    this.tweens.add({ targets: this.dragon, alpha: 0, scaleY: 3.2, duration: 1000, ease: 'Cubic.in' });
-    this.tweens.add({ targets: this.dShadow, alpha: 0, duration: 1000 });
-    this.time.delayedCall(1000, () => this.end(true));
+  killSeq(r) {
+    window.DC.phase = 'kill';
+    const L = r.L, cam = this.cameras.main, last = this.stage === RULES.stages.length - 1, hd = this.head(), N = (n) => Math.max(4, Math.round(n * this.lite()));
+    this.boss.stop();
+    if (L >= 3) { // blown apart
+      sfx(this, 'shatter', 0.9); sfx(this, L === 4 ? 'nuke' : 'boom', 0.8);
+      cam.flash(300, 255, 230, 160); cam.shake(700, 0.03);
+      this.ring(hd.x, hd.y - 20, OK_TIERS[L].col, 14, 14, 0, 800);
+      this.shatter(L === 4 ? 9 : 6, L === 4 ? 7 : 5, L === 4 ? 520 : 360);
+      for (let k = 0; k < 3 + L; k++) this.time.delayedCall(k * 110, () => burst(this, hd.x + Phaser.Math.Between(-120, 120), hd.y + Phaser.Math.Between(-60, 80), k % 2 ? 0xff7a2a : OK_TIERS[L].col, N(40), 420).setDepth(41));
+      window.DC.blownApart = true;
+    } else { // falls / gets knocked back
+      sfx(this, 'win');
+      cam.flash(300, 255, 230, 150); cam.shake(500, 0.02);
+      for (let k = 0; k < 4; k++) this.time.delayedCall(k * 150, () => burst(this, hd.x - 40 + k * 50, LAVA_GROUND - 100, 0xffcf40, N(40), 380));
+      this.boss.setTint(0x777777);
+      if (L === 2) this.tweens.add({ targets: this.boss, x: this.boss.x + 180, angle: 18, alpha: 0, scaleY: this.cfg.scale * 0.8, duration: 900, ease: 'Cubic.in' });
+      else this.tweens.add({ targets: this.boss, alpha: 0, scaleY: this.cfg.scale * 0.8, duration: 1000, ease: 'Cubic.in' });
+      this.tweens.add({ targets: this.bShadow, alpha: 0, duration: 1000 });
+    }
+    this.log.push({ stage: this.stage, dmg: r.total, hp: this.hpMax, L, ratio: r.ratio });
+    window.DC.log = this.log;
+    this.time.delayedCall(L >= 3 ? 1400 : 1100, () => last ? this.end(true) : this.stageClear());
+  }
+  stageClear() {
+    window.DC.phase = 'stage-clear';
+    const N = (n) => Math.max(4, Math.round(n * this.lite()));
+    sfx(this, 'banner', 0.8); sfx(this, 'rare', 0.5);
+    this.tweens.add({ targets: this.hero, x: 520, duration: 400 });
+    const ban = txt(this, W / 2, 220, `STAGE ${this.stage + 1} CLEAR!`, 76, '#ffd36a', { strokeThickness: 12, stroke: '#4a2400' }).setDepth(60);
+    try { if (ban.preFX) { ban.preFX.addShine(0.9, 0.35, 4); ban.preFX.addGlow(0xffcf40, 4, 0, false, 0.1, 10); } } catch (e) {}
+    popText(this, ban, 1);
+    const nx = RULES.stages[this.stage + 1];
+    const sub = txt(this, W / 2, 300, `Next: ${nx.name}  ·  HP ${fmt(nx.hp)}`, 30, '#ffffff').setDepth(60); sub.setAlpha(0);
+    this.tweens.add({ targets: sub, alpha: 1, duration: 300, delay: 300 });
+    const coins = this.add.particles(0, -20, 'coin', { x: { min: 100, max: 1100 }, lifespan: 2000, speedY: { min: 120, max: 260 }, gravityY: 260, rotate: { min: 0, max: 360 }, scale: { min: 1.4, max: 2.2 }, frequency: 30 / this.lite() }).setDepth(59);
+    this.time.delayedCall(1200, () => coins.stop());
+    burst(this, W / 2, 220, 0xffcf40, N(60), 420).setDepth(61);
+    this.time.delayedCall(2200, () => {
+      this.cameras.main.fadeOut(350, 0, 0, 0);
+      this.cameras.main.once('camerafadeoutcomplete', () => this.scene.start('intro', { stage: this.stage + 1, items: this.items, log: this.log }));
+    });
   }
   loseSeq() {
-    // the dragon lunges and EATS the hero (no fire)
+    // the boss lunges and EATS the hero
     window.DC.phase = 'eating';
-    const cam = this.cameras.main;
-    this.tweens.add({ targets: this.dragon, scaleY: 3.7, scaleX: 4.2, duration: 220, ease: 'Quad.out' }); // rear back
+    this.tweens.add({ targets: [this.dmg, this.br, this.okT, this.rays].filter(Boolean), alpha: 0, duration: 250 });
+    const cam = this.cameras.main, c = this.cfg, s0 = c.scale, b = this.boss;
+    this.log.push({ stage: this.stage, dmg: this.res.total, hp: this.hpMax, L: 0, ratio: this.res.ratio, failed: true });
+    window.DC.log = this.log;
+    this.tweens.add({ targets: b, scaleY: s0 * 0.92, scaleX: s0 * 1.05, duration: 220, ease: 'Quad.out' }); // rear back
     this.time.delayedCall(230, () => {
-      const targetX = this.hero.x + 288 - 66 * 4 + 30; // mouth lands on the hero
+      const mo = (c.mouth[0] - c.fw / 2) * s0, targetX = this.hero.x - mo + 30; // mouth lands on the hero
       this.tweens.add({
-        targets: this.dragon, x: targetX, scaleX: 4, scaleY: 4, duration: 260, ease: 'Back.in', onComplete: () => {
-          const m = this.mouth();
+        targets: b, x: targetX, scaleX: s0, scaleY: s0, duration: 260, ease: 'Back.in', onComplete: () => {
+          const m = { x: b.x + mo, y: LAVA_GROUND - (c.fh - c.mouth[1]) * s0 };
           this.hero.anims.stop();
           this.hero.setTint(0xffb0a0);
           this.tweens.add({ targets: this.hero, x: m.x + 10, y: m.y + 40, scaleX: 0.3, scaleY: 0.3, angle: -200, alpha: 0, duration: 260, ease: 'Quad.in' });
           this.time.delayedCall(240, () => {
             sfx(this, 'lose'); sfx(this, 'hit', 0.6);
             cam.shake(420, 0.03); cam.flash(160, 180, 0, 0);
-            const chomp = txt(this, m.x, m.y - 90, 'CHOMP!', 64, '#ff5a4a', { strokeThickness: 10 });
+            const chomp = txt(this, Phaser.Math.Clamp(m.x, 160, W - 160), m.y - 90, 'CHOMP!', 64, '#ff5a4a', { strokeThickness: 10 }).setDepth(50);
             chomp.setAngle(-8); popText(this, chomp, 1);
             burst(this, m.x, m.y + 20, 0xff3030, 40, 300, 'px');
             window.DC.phase = 'chomp';
-            // chew: squash + stretch twice
-            this.tweens.add({ targets: this.dragon, scaleY: 3.5, scaleX: 4.3, yoyo: true, repeat: 2, duration: 110, ease: 'Sine.inOut',
-              onComplete: () => { this.dragon.setScale(4); this.hero.setVisible(false); this.time.delayedCall(500, () => this.end(false)); } });
+            // chew: squash + stretch
+            this.tweens.add({ targets: b, scaleY: s0 * 0.875, scaleX: s0 * 1.075, yoyo: true, repeat: 2, duration: 110, ease: 'Sine.inOut',
+              onComplete: () => { b.setScale(s0); this.hero.setVisible(false); this.time.delayedCall(500, () => this.end(false)); } });
           });
         },
       });
@@ -700,20 +927,31 @@ class Strike extends Phaser.Scene {
   end(win) {
     window.DC.phase = 'end'; window.DC.win = win;
     endMusic(this, win);
-    this.add.rectangle(0, 0, W, H, 0x000000, 0.65).setOrigin(0);
-    panel(this, W / 2 - 360, 70, 720, 340, { border: win ? 0xffcf40 : 0xd04a3a });
-    const t = txt(this, W / 2, 140, win ? 'DRAGON SLAIN!' : 'THE DRAGON ATE YOU', 64, win ? '#ffd36a' : '#ff5a4a', { strokeThickness: 10 });
+    const log = this.log, total = log.reduce((a, e) => a + e.dmg, 0), best = log.reduce((a, e) => e.dmg > a.dmg ? e : a, log[0]);
+    window.DC.summary = { total, best: best.dmg, stages: log.length, cleared: log.filter((e) => !e.failed).length };
+    this.add.rectangle(-100, -100, W + 200, H + 200, 0x000000, 0.68).setOrigin(0).setDepth(70);
+    const D = 71, g = panel(this, W / 2 - 390, 20, 780, 468, { border: win ? 0xffcf40 : 0xd04a3a }); g.setDepth(D);
+    const t = txt(this, W / 2, 72, win ? 'ALL BOSSES SLAIN!' : `THE ${this.st.short.toUpperCase()} ATE YOU`, 58, win ? '#ffd36a' : '#ff5a4a', { strokeThickness: 10 }).setDepth(D);
+    try { if (win && t.preFX) t.preFX.addShine(0.8, 0.3, 4); } catch (e) {}
     popText(this, t, 1);
-    txt(this, W / 2, 215, `You dealt ${this.res.total} / ${RULES.dragonHP}`, 32);
-    txt(this, W / 2, 262, win ? 'Legends will sing of your loot.' : 'Read your items. Choose better.', 24, '#e8dcff');
-    this.items.forEach((it, i) => {
-      const x = W / 2 - 4 * 70 + 35 + i * 70;
-      this.add.rectangle(x, 336, 56, 56, itemCol(it), 0.3).setStrokeStyle(2, itemCol(it));
-      this.tip.attach(this.add.image(x, 336, 'icons', it.frame).setScale(1.5), it);
+    RULES.stages.forEach((st, k) => {
+      const e = log[k], y = 132 + k * 34;
+      const c1 = txt(this, W / 2 - 360, y, `STAGE ${k + 1}  ${st.name}`, 22, e ? (e.failed ? '#ff8a7a' : '#ffffff') : '#6a5a7a', { strokeThickness: 4 }).setOrigin(0, 0.5).setDepth(D);
+      const c2 = txt(this, W / 2 + 90, y, e ? `${fmt(e.dmg)} / ${fmt(e.hp)}` : '—', 22, e ? '#ffffff' : '#6a5a7a', { strokeThickness: 4 }).setOrigin(1, 0.5).setDepth(D);
+      const lab = !e ? 'not reached' : e.failed ? 'EATEN' : okLabel(e.L, e.ratio);
+      txt(this, W / 2 + 360, y, lab, 22, !e ? '#6a5a7a' : e.failed ? '#ff5a4a' : OK_TIERS[e.L].css, { strokeThickness: 4 }).setOrigin(1, 0.5).setDepth(D);
     });
-    if (win) burst(this, W / 2, 140, 0xffcf40, 60, 420);
-    txt(this, W / 2, 384, 'Tap an item to inspect it', 16, '#bba8d0', { strokeThickness: 3 });
-    button(this, W / 2, 470, 'PLAY AGAIN', () => { restoreMusic(this); this.scene.start('pick', { round: 0, items: [] }); }, 300);
+    txt(this, W / 2, 252, `TOTAL DAMAGE ${fmt(total)}   ·   BEST HIT ${fmt(best.dmg)}`, 30, '#ffd36a').setDepth(D);
+    txt(this, W / 2, 292, win ? 'Legends will sing of your loot.' : 'Read your items. Choose better.', 22, '#e8dcff').setDepth(D);
+    const n = this.items.length, sp = 66;
+    this.items.forEach((it, i) => {
+      const x = W / 2 - (n - 1) * sp / 2 + i * sp;
+      this.add.rectangle(x, 360, 56, 56, itemCol(it), 0.3).setStrokeStyle(2, itemCol(it)).setDepth(D);
+      this.tip.attach(this.add.image(x, 360, 'icons', it.frame).setScale(1.5).setDepth(D), it);
+    });
+    txt(this, W / 2, 410, 'Tap an item to inspect it', 16, '#bba8d0', { strokeThickness: 3 }).setDepth(D);
+    if (win) { burst(this, W / 2, 72, 0xffcf40, 60, 420).setDepth(D + 1); this.time.delayedCall(300, () => burst(this, W / 2, 252, 0xff7ab0, 40, 360).setDepth(D + 1)); }
+    button(this, W / 2, 548, 'PLAY AGAIN', () => { restoreMusic(this); this.scene.start('intro', { stage: 0, items: [], log: [] }); }, 300).setDepth(D);
   }
 }
 
@@ -724,7 +962,7 @@ function startGame() {
     pixelArt: true, roundPixels: true,
     scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
     input: { keyboard: false }, audio: { disableWebAudio: false },
-    scene: [Boot, Title, Pick, Strike],
+    scene: [Boot, Title, Intro, Pick, Strike],
   });
 }
 if (typeof Phaser !== 'undefined') {
