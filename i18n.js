@@ -505,6 +505,7 @@ for (const l of LANGS) Object.assign(I18N[l], I18N7[l]);
 const I18N8 = {
 /*<en>*/
 en: {
+  statsT: 'HERO STATS', stExec: 'Execute', stEcho: 'Echo', stGreed: 'Greed', stPerm: 'Permanent', stCurses: 'Curses', stGems: 'Purify gems', 
   statLine: (ex, ec, gr, pm) => `Execute ${ex}% · Echo ${ec}% · Greed ${gr}% · Perm +${pm}%`, comboOn: 'ACTIVE', 
   chestEl: (el) => `${el} chest`, darkChest: 'DARK CHEST', darkHint: 'Better loot… or a CURSED item', blackHint: 'Better loot… or a CURSED item',
   rar: { COMMON: 'COMMON', UNCOMMON: 'UNCOMMON', RARE: 'RARE', EPIC: 'EPIC', LEGENDARY: 'LEGENDARY', MYTHIC: 'MYTHIC', CURSED: 'CURSED' },
@@ -529,6 +530,7 @@ en: {
 /*</en>*/
 /*<zh>*/
 zh: {
+  statsT: '英雄属性', stExec: '斩杀线', stEcho: '回响', stGreed: '贪婪', stPerm: '永久加成', stCurses: '诅咒', stGems: '净化宝石', 
   statLine: (ex, ec, gr, pm) => `斩杀 ${ex}% · 回响 ${ec}% · 贪婪 ${gr}% · 永久 +${pm}%`, comboOn: '已激活', 
   chestEl: (el) => `${el}宝箱`, darkChest: '暗黑宝箱', darkHint: '更好的战利品……或诅咒装备', blackHint: '更好的战利品……或诅咒装备',
   rar: { COMMON: '普通', UNCOMMON: '优秀', RARE: '稀有', EPIC: '史诗', LEGENDARY: '传说', MYTHIC: '神话', CURSED: '诅咒' },
@@ -553,6 +555,7 @@ zh: {
 /*</zh>*/
 /*<ja>*/
 ja: {
+  statsT: 'ヒーロー能力', stExec: '処刑ライン', stEcho: '残響', stGreed: '強欲', stPerm: '永続ボーナス', stCurses: '呪い', stGems: '浄化の宝石', 
   statLine: (ex, ec, gr, pm) => `処刑 ${ex}% · 残響 ${ec}% · 強欲 ${gr}% · 永続 +${pm}%`, comboOn: '発動中', 
   chestEl: (el) => `${el}の宝箱`, darkChest: '闇の宝箱', darkHint: 'より良い戦利品…または呪いの装備', blackHint: 'より良い戦利品…または呪いの装備',
   rar: { COMMON: 'コモン', UNCOMMON: 'アンコモン', RARE: 'レア', EPIC: 'エピック', LEGENDARY: 'レジェンド', MYTHIC: 'ミシック', CURSED: '呪い' },
@@ -577,6 +580,7 @@ ja: {
 /*</ja>*/
 /*<ko>*/
 ko: {
+  statsT: '영웅 능력치', stExec: '처형선', stEcho: '메아리', stGreed: '탐욕', stPerm: '영구 보너스', stCurses: '저주', stGems: '정화 보석', 
   statLine: (ex, ec, gr, pm) => `처형 ${ex}% · 메아리 ${ec}% · 탐욕 ${gr}% · 영구 +${pm}%`, comboOn: '활성', 
   chestEl: (el) => `${el} 상자`, darkChest: '어둠의 상자', darkHint: '더 좋은 전리품… 또는 저주 장비', blackHint: '더 좋은 전리품… 또는 저주 장비',
   rar: { COMMON: '일반', UNCOMMON: '고급', RARE: '희귀', EPIC: '영웅', LEGENDARY: '전설', MYTHIC: '신화', CURSED: '저주' },
@@ -601,6 +605,7 @@ ko: {
 /*</ko>*/
 /*<pt>*/
 pt: {
+  statsT: 'ATRIBUTOS', stExec: 'Execução', stEcho: 'Eco', stGreed: 'Ganância', stPerm: 'Permanente', stCurses: 'Maldições', stGems: 'Gemas', 
   statLine: (ex, ec, gr, pm) => `Execução ${ex}% · Eco ${ec}% · Ganância ${gr}% · Perm. +${pm}%`, comboOn: 'ATIVO', 
   chestEl: (el) => `Baú de ${el}`, darkChest: 'BAÚ SOMBRIO', darkHint: 'Saque melhor… ou um item AMALDIÇOADO', blackHint: 'Saque melhor… ou um item AMALDIÇOADO',
   rar: { COMMON: 'COMUM', UNCOMMON: 'INCOMUM', RARE: 'RARO', EPIC: 'ÉPICO', LEGENDARY: 'LENDÁRIO', MYTHIC: 'MÍTICO', CURSED: 'AMALDIÇOADO' },
@@ -625,6 +630,7 @@ pt: {
 /*</pt>*/
 /*<es>*/
 es: {
+  statsT: 'ATRIBUTOS', stExec: 'Ejecución', stEcho: 'Eco', stGreed: 'Codicia', stPerm: 'Permanente', stCurses: 'Maldiciones', stGems: 'Gemas', 
   statLine: (ex, ec, gr, pm) => `Ejecución ${ex}% · Eco ${ec}% · Codicia ${gr}% · Perm. +${pm}%`, comboOn: 'ACTIVO', 
   chestEl: (el) => `Cofre de ${el}`, darkChest: 'COFRE OSCURO', darkHint: 'Mejor botín… o un objeto MALDITO', blackHint: 'Mejor botín… o un objeto MALDITO',
   rar: { COMMON: 'COMÚN', UNCOMMON: 'POCO COMÚN', RARE: 'RARO', EPIC: 'ÉPICO', LEGENDARY: 'LEGENDARIO', MYTHIC: 'MÍTICO', CURSED: 'MALDITO' },

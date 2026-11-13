@@ -342,6 +342,7 @@ function fmt(n) {
 const W = 1200, H = 628;
 let FONT = fontFor(LANG);
 const LAVA_GROUND = 512;   // lava floor line of bg_lava drawn at 3x
+const PICK_GROUND = 542;   // top edge of the floor strip in bg_hoard (the hero stands on it on the pick screen)
 window.DC = { phase: 'boot', round: 0 };
 // test hook: DC.jump(20) starts stage 21 with gear built by 20 stages of picks
 window.DC.jump = (n, seed, scene, bare) => {
@@ -541,6 +542,30 @@ function softFlash(scene, col, a = 0.25, dur = 240) {
 function heroGlow(spr) { try { if (spr.preFX) spr.preFX.addGlow(0xfff2b0, 3, 0, false, 0.1, 10); } catch (e) {} }
 
 // ---- endless run state, records, gear-event labels
+// after a pick the item card + gear peek stay up this much longer (tap anywhere to continue sooner)
+const READ_MS = 3200, PEEK_MS = 600000;
+// hero POWER: a fixed HUD chip in the top-left corner on every screen (pick, reveal, pre-strike, strike, stage clear, stage card)
+// It is drawn by its own fixed UI camera, so camera zoom / pan / shake never move it off screen.
+function hudCamera(scene) {
+  const ui = scene.uiCam = scene.cameras.add(0, 0, W, H);
+  ui.ignore(scene.children.list);
+  const ev = Phaser.Scenes.Events.ADDED_TO_SCENE, f = (o) => { if (!o.__hud) ui.ignore(o); };
+  scene.sys.events.on(ev, f); scene.sys.events.once('shutdown', () => scene.sys.events.off(ev, f));
+}
+function powerHud(scene, v) {
+  const D = 70, x = 12, y = 10, w = 216, h = 62, mk = (o) => { o.__hud = true; return o; };
+  if (!scene.uiCam || !scene.cameras.cameras.includes(scene.uiCam)) hudCamera(scene);
+  const objs = [], add = (o) => { objs.push(o); return o; };
+  add(panel(scene, x, y, w, h, { border: 0xffcf40, alpha: 0.92 }).setDepth(D));
+  add(txt(scene, x + w / 2, y + 15, t('power'), 14, '#ffe8a0', { strokeThickness: 4, maxW: w - 16 }).setDepth(D + 1));
+  const n = add(txt(scene, x + w / 2, y + 42, fmt(v), 30, '#ffd36a', { strokeThickness: 7, stroke: '#2a1404', maxW: w - 20 }).setDepth(D + 1));
+  const hit = add(scene.add.rectangle(x + w / 2, y + h / 2, w, h, 0xffffff, 0.001).setDepth(D + 2).setData('item', true));
+  objs.forEach((o) => { mk(o); o.cameraFilter &= ~scene.uiCam.id; scene.cameras.main.ignore(o); });   // only the UI camera draws the chip
+  if (scene.openGear) hit.setInteractive({ useHandCursor: true }).on('pointerdown', () => { if (scene.statsLocked) return; if (scene.gearOpen && scene.gearPinned) scene.closeGear(); else scene.openGear(true); });
+  scene.powPos = { x: x + w / 2, y: y + 42 }; window.DC.powerHud = { x: x + w / 2, y: y + 42, text: n.text };
+  return n;
+}
+const GEM_ROW = { x: 1170, y: 482 };   // where a found PURIFY GEM flies to (the stats panel's gem row)
 const BIG_R = { EPIC: 1, LEGENDARY: 1, MYTHIC: 1 }, LEG_R = { LEGENDARY: 1, MYTHIC: 1 };
 const pct = (x) => { const p = x * 100; return p >= 100 ? fmt(p) : p >= 10 ? Math.round(p) : p.toFixed(1).replace(/\.0$/, ''); };
 function newRun() { return { s: 0, G: newGear(), log: [], total: 0, maxHit: 0 }; }
@@ -758,7 +783,8 @@ class Title extends Phaser.Scene {
 
 class Pick extends Phaser.Scene {
   constructor() { super('pick'); }
-  init(d) { this.run = d.run; this.s = this.run.s; this.G = this.run.G; this.locked = true; this.done = false; this.canSkip = false; this.autoNext = null; this.dim = null; this.inv = []; }
+  init(d) { this.run = d.run; this.s = this.run.s; this.G = this.run.G; this.locked = true; this.done = false; this.canSkip = false; this.autoNext = null; this.dim = null; this.inv = [];
+    this.statsHidden = false; this.statsLocked = false; this.gearOpen = false; this.gearPinned = false; this.peekT = null; this.drag = null; this.hoverPow = false; this.hoverPop = false; this.uiCam = null; }
   get items() { return gearList(this.G); }
   pw() { return expStrike(this.G, bossEl(this.s), this.s); }
   create() {
@@ -830,17 +856,60 @@ class Pick extends Phaser.Scene {
   // hero-side POWER: expected damage of the current gear (synergies + curses included). Not a promise - rolls, crits and chains vary.
   drawPower() {
     const hx = 120;
-    this.hShadow = shadow(this, hx, 616, 80);
-    this.heroS = this.add.sprite(hx, 618, 'hero_idle').setScale(2.4).setOrigin(0.5, 1).play('hero-idle'); heroGlow(this.heroS);
-    this.powBox = panel(this, 12, 330, 236, 80, { border: 0xffcf40 });
-    this.powL = txt(this, 130, 350, t('power'), 16, '#ffe8a0', { strokeThickness: 4, maxW: 220 });
-    this.powN = txt(this, 130, 384, '0', 38, '#ffd36a', { strokeThickness: 8, stroke: '#2a1404', maxW: 220 });
-    this.powHint = txt(this, 130, 424, t('gearTap'), 13, '#c8b49a', { strokeThickness: 3, maxW: 236 });
+    this.hShadow = shadow(this, hx, PICK_GROUND - 2, 80);
+    this.heroS = this.add.sprite(hx, PICK_GROUND, 'hero_idle').setScale(2.4).setOrigin(0.5, 1).play('hero-idle'); heroGlow(this.heroS);
+    this.heroS.setDepth(12); this.hShadow.setDepth(12);
     this.gemObjs = [];
-    const hit = this.add.rectangle(130, 470, 250, 300, 0xffffff, 0.001).setInteractive({ useHandCursor: true }).setData('item', true);
-    hit.on('pointerover', (p) => { if (!p.wasTouch) { this.hoverPow = true; this.openGear(false); } });
+    this.statX = 1006; this.gx0 = 652;           // stats panel on the right; the GEAR list expands to its left
+    this.setupGearInput();
+    this.powV = this.pw();
+    this.gearOpen = false; this.inv = []; this.seenN = this.G.seenN || 0;
+    this.statObjs = []; this.drawStats(); this.powN = powerHud(this, this.powV); this.setPower(this.powV, false);
+  }
+  // HERO STATS: compact, always visible during the pick (right column, clear of the 3 chests); changed values flash
+  drawStats() {
+    (this.statObjs || []).forEach((o) => o.destroy()); const o = this.statObjs = [];
+    if (this.statsHidden) return;
+    const G = this.G, Y = stats(G.items), X = this.statX, Wd = 186, D = 14, add = (q) => { o.push(q.setDepth(D)); return q; };
+    const rows = [];   // POWER itself is the fixed HUD chip (top-left), always on screen
+    ELEMENTS.forEach((el) => { const lv = Y.lv[el], nx = RULES.elem.at[lv]; rows.push(['el' + el, elName(el), `${Y.cnt[el]}${nx ? '/' + nx : ''} · Lv${lv}`, lv ? '#ffffff' : EL_CSS[el], el]); });
+    ['melt', 'superconduct', 'overload'].forEach((k) => rows.push(['c_' + k, t('comboN')[k], Y[k] ? t('comboOn') : '—', Y[k] ? '#7aff8a' : '#6a5a7a', null, k]));
+    rows.push(['exec', t('stExec'), pct(Y.execute) + '%', Y.execute ? '#ff8ab0' : '#8a7a8a'], ['echo', t('stEcho'), pct(Y.echo) + '%', Y.echo ? '#ffffff' : '#8a7a8a'],
+      ['greed', t('stGreed'), pct(Y.greed) + '%', Y.greed ? '#ffd84a' : '#8a7a8a'], ['perm', t('stPerm'), '+' + pct(G.perm) + '%', G.perm ? '#ffb0e0' : '#8a7a8a'],
+      ['curse', t('stCurses'), String(curses(G).length), curses(G).length ? '#ff6a9a' : '#8a7a8a'], ['gems', t('stGems'), String(G.gems), G.gems ? '#e0b8ff' : '#8a7a8a', null, null, 'gem']);
+    const rh = 24, y0 = 150, h = 62 + rows.length * rh;
+    add(panel(this, X, y0, Wd, h, { border: 0xffcf40, alpha: 0.88 }));
+    // the whole panel: hover (desktop) peeks the full GEAR list, tap pins / unpins it
+    const hit = add(this.add.rectangle(X + Wd / 2, y0 + h / 2, Wd, h, 0xffffff, 0.001).setInteractive({ useHandCursor: true }).setData('item', true));
+    hit.on('pointerover', (p) => { if (!p.wasTouch && !this.statsLocked) { this.hoverPow = true; this.openGear(false); } });
     hit.on('pointerout', (p) => { if (!p.wasTouch) { this.hoverPow = false; this.maybeCloseGear(); } });
-    hit.on('pointerdown', () => { if (this.gearOpen && this.gearPinned) this.closeGear(); else this.openGear(true); });
+    hit.on('pointerdown', () => { if (this.statsLocked) return; if (this.gearOpen && this.gearPinned) this.closeGear(); else this.openGear(true); });
+    this.statBox = { x: X, y: y0, w: Wd, h };
+    add(txt(this, X + Wd / 2, y0 + 18, t('statsT'), 16, '#ffd36a', { strokeThickness: 4, maxW: Wd - 12 }));
+    add(txt(this, X + Wd / 2, y0 + h - 14, t('gearTap'), 12, '#c8b49a', { strokeThickness: 3, maxW: Wd - 12 }));
+    const prev = G.statPrev || {}, cur = {};
+    rows.forEach(([key, label, val, col, el, combo, gem], i) => {
+      const y = y0 + 44 + i * rh, sep = i === 3 || i === 6;
+      if (sep) add(this.add.rectangle(X + Wd / 2, y - rh / 2, Wd - 16, 1, 0xffcf40, 0.3));
+      if (el) add(this.add.image(X + 16, y, 'el_' + el).setScale(1.5));
+      const lt = add(this.add.text(X + (el ? 28 : 10), y, label, { fontFamily: FONT, fontSize: '14px', color: combo ? col : '#e8dcc8', fontStyle: 'bold', stroke: '#140812', strokeThickness: 3 }).setOrigin(0, 0.5));
+      const vt = add(this.add.text(X + Wd - 10, y, val, { fontFamily: FONT, fontSize: key === 'power' ? '18px' : '14px', color: col, fontStyle: 'bold', stroke: '#140812', strokeThickness: 3 }).setOrigin(1, 0.5));
+      fitText(vt, 84, key === 'power' ? 18 : 14); fitText(lt, Wd - 22 - vt.displayWidth - (el ? 18 : 0), 14);
+      cur[key] = val;
+      if (gem) { add(this.add.image(X + Wd - 26 - vt.displayWidth, y, 'gem').setScale(1.2)); this.tip.attach(add(this.add.rectangle(X + Wd / 2, y, Wd - 8, rh - 2, 0xffffff, 0.001).setData('row', true)), { kind: 'gem', rarity: 'EPIC', element: 'Ice', name: t('gemT') }); GEM_ROW.x = X + Wd - 16; GEM_ROW.y = y; }
+      if (el || combo) this.tip.attach(add(this.add.rectangle(X + Wd / 2, y, Wd - 8, rh - 2, 0xffffff, 0.001).setData('row', true)), el ? { kind: 'syn', element: el, rarity: 'RARE', name: t('syn')[el] } : { kind: 'combo', combo, on: Y[combo], rarity: Y[combo] ? 'LEGENDARY' : 'COMMON', element: 'Fire', name: t('comboN')[combo] });
+      if (prev[key] !== undefined && prev[key] !== val) { // changed since last shown: glow the row, pop the value
+        const hl = add(this.add.rectangle(X + Wd / 2, y, Wd - 8, rh - 2, 0xffd36a, 0.4)); hl.setDepth(D - 0.5);
+        this.tweens.add({ targets: hl, alpha: 0.08, yoyo: true, repeat: 2, duration: 380, onComplete: () => hl.setAlpha(0.14) });
+        vt.setScale(1.4); this.tweens.add({ targets: vt, scale: 1, duration: 320, ease: 'Back.out' });
+        window.DC.statChanged = (window.DC.statChanged || []).concat(key);
+      }
+    });
+    G.statPrev = cur; window.DC.stats = cur;
+  }
+  drawGems() { this.drawStats(); }
+  // shared pointer handling for the GEAR list (drag / wheel scroll, tap outside closes)
+  setupGearInput() {
     this.input.on('pointerdown', (p, over) => { if (this.gearOpen && !over.length && !this.inPopup(p)) this.closeGear(); });
     this.input.on('pointermove', (p) => {
       if (this.drag && p.isDown) { const dy = p.worldY - this.drag.y; if (Math.abs(dy) > 6) this.drag.moved = true; if (this.drag.moved) { if (this.tip.visible) this.tip.hide(true); } if (this.drag.moved) this.scrollTo(this.drag.s0 - dy * (this.drag.thumb ? this.contentH / this.vh : 1)); }
@@ -848,32 +917,22 @@ class Pick extends Phaser.Scene {
     });
     this.input.on('pointerup', () => { this.drag = null; });
     this.input.on('wheel', (p, over, dx, dy) => { if (this.gearOpen && this.inPopup(p)) this.scrollTo(this.scrollY + dy * 0.6); });
-    [this.powBox, this.powL, this.powN, this.powHint, this.heroS, this.hShadow].forEach((o) => o.setDepth(12));
-    this.powV = this.pw(); this.setPower(this.powV, false);
-    this.drawGems();
-    this.gearOpen = false; this.inv = []; this.seenN = this.G.seenN || 0;
-  }
-  drawGems() {
-    this.gemObjs.forEach((o) => o.destroy());
-    this.gemObjs = gemBadge(this, this.tip, this.G, 52, 306, 20);
-    const n = curses(this.G).length;
-    this.powHint.setText(n ? `${t('cursedN', n)} · ${t('gearTap')}` : t('gearTap')).setColor(n ? '#ff8acb' : '#c8b49a'); fitText(this.powHint, 236, 13);
   }
   setPower(v, anim = true) {
     const cursed = curses(this.G).length > 0, col = cursed ? '#ff5a5a' : '#ffd36a', from = this.powShown || 0, up = v > from * 1.0001;
     this.powV = v; this.powN.setColor(col); window.DC.power = v;
-    if (!anim) { this.powShown = v; setFit(this.powN, fmt(v)); return; }
+    if (!anim || !this.powN) { this.powShown = v; if (this.powN) setFit(this.powN, fmt(v)); return; }
     const c = { v: from };
-    this.tweens.add({ targets: c, v, duration: 650, ease: 'Cubic.out', onUpdate: () => setFit(this.powN, fmt(c.v)), onComplete: () => {
-      this.powShown = v; setFit(this.powN, fmt(v));
+    this.tweens.add({ targets: c, v, duration: 650, ease: 'Cubic.out', onUpdate: () => { if (this.powN.active) setFit(this.powN, fmt(c.v)); }, onComplete: () => {
+      this.powShown = v; if (!this.powN.active) return; setFit(this.powN, fmt(v));
       this.tweens.killTweensOf(this.powN); this.powN.setScale(up ? 1.45 : 0.8);
       this.tweens.add({ targets: this.powN, scale: 1, duration: 260, ease: 'Back.out' });
-      if (up) { burst(this, 130, 384, 0xffcf40, 24, 220, 'px').setDepth(30); sfx(this, 'tick', 0.6); }
+      if (up) { burst(this, this.powPos.x, this.powPos.y, 0xffcf40, 24, 220, 'px').setDepth(30); sfx(this, 'tick', 0.6); }
       else { this.cameras.main.shake(160, 0.006); }
     } });
   }
   // ---- gear popup: EVERY item (newest at the top), scrollable with wheel / drag / scrollbar; whole-row tooltips ----
-  inPopup(p) { const g = this.gx0 || 270; return this.gearOpen && p.worldX >= g - 18 && p.worldX <= g + 316 && p.worldY >= 116 && p.worldY <= (this.popBottom || 610); }
+  inPopup(p) { const g = this.gx0; return this.gearOpen && p.worldX >= g - 18 && p.worldX <= g + 316 && p.worldY >= 116 && p.worldY <= (this.popBottom || 610); }
   openGear(pin) {
     if (pin) this.gearPinned = true;
     if (this.peekT) { this.peekT.remove(); this.peekT = null; if (this.gearOpen) { this.gearOpen = false; this.inv.forEach((o) => o.destroy()); this.inv = []; } }
@@ -882,7 +941,7 @@ class Pick extends Phaser.Scene {
   maybeCloseGear(ms = 160) {
     this.time.delayedCall(ms, () => {
       if (this.gearPinned || !this.gearOpen || this.peekT || this.drag) return;
-      const p = this.input.activePointer, inPow = p.worldX <= 260 && p.worldY >= 290;
+      const p = this.input.activePointer, B = this.statBox || { x: 0, y: 0, w: 0, h: 0 }, inPow = p.worldX >= B.x && p.worldX <= B.x + B.w && p.worldY >= B.y && p.worldY <= B.y + B.h;
       if (!this.inPopup(p) && !inPow) this.closeGear();
     });
   }
@@ -894,10 +953,10 @@ class Pick extends Phaser.Scene {
   renderGear(peek = false) {
     this.inv.forEach((o) => o.destroy()); this.inv = []; this.rows = []; this.rowObjs = [];
     if (!this.gearOpen) return;
-    const x0 = this.gx0 = 270, G = this.G, D = 600, add = (o) => { this.inv.push(o); return o; };
-    const items = [...G.items].reverse(), rowH = this.rowH = 37, top = 252;
+    const x0 = this.gx0, G = this.G, D = 600, add = (o) => { this.inv.push(o); return o; };
+    const items = [...G.items].reverse(), rowH = this.rowH = 37, top = 182;
     const fresh = Math.max(0, Math.min(3, items.length, G.items.length - this.seenN));   // at most the 3 newest slide in
-    const vh = this.vh = peek ? Math.min(6, Math.max(1, items.length)) * rowH : 344, bottom = this.popBottom = top + vh + (peek ? 8 : 16);
+    const vh = this.vh = peek ? Math.min(6, Math.max(1, items.length)) * rowH : 370, bottom = this.popBottom = top + vh + (peek ? 8 : 16);
     const bg = add(panel(this, x0 - 18, 116, 334, bottom - 116, { border: 0xffcf40, alpha: 0.96 }));
     const hit = add(this.add.rectangle(x0 + 149, (116 + bottom) / 2, 334, bottom - 116, 0xffffff, 0.001).setInteractive().setData('item', true));
     hit.on('pointerover', () => { this.hoverPop = true; }); hit.on('pointerout', () => { this.hoverPop = false; this.maybeCloseGear(); });
@@ -905,25 +964,8 @@ class Pick extends Phaser.Scene {
     add(txt(this, x0 + 149, 134, t('gearT') + `  ${items.length}`, 20, '#ffd36a', { strokeThickness: 5, maxW: 300 }));
     const nc = curses(G).length;
     add(txt(this, x0 + 149, 156, t('gearCount', ofKind(G, 'weapon').filter((x) => !x.cursed).length, ofKind(G, 'armor').filter((x) => !x.cursed).length, ofKind(G, 'accessory').filter((x) => !x.cursed).length) + (nc ? ` · ${t('cursedN', nc)}` : ''), 13, nc ? '#ffb0d0' : '#c8b49a', { strokeThickness: 3, maxW: 310 }));
-    const Y = stats(G.items), off = offEls(G);
-    ELEMENTS.forEach((el, k) => {
-      const cx = x0 - 4 + k * 100, lv = Y.lv[el];
-      add(this.add.image(cx + 6, 182, 'el_' + el).setScale(1.6));
-      const nx = RULES.elem.at[lv];
-      const tx = add(this.add.text(cx + 16, 182, `${elName(el)} ${Y.cnt[el]}${nx ? '/' + nx : ''}${lv ? ' Lv' + lv : ''}`, { fontFamily: FONT, fontSize: '15px', color: off.includes(el) ? '#6a5a7a' : lv ? '#ffffff' : EL_CSS[el], fontStyle: 'bold', stroke: '#140812', strokeThickness: 3 }).setOrigin(0, 0.5));
-      fitText(tx, 80, 15);
-      this.tip.attach(add(this.add.rectangle(cx + 46, 182, 98, 22, 0xffffff, 0.001).setData('row', true)), { kind: 'syn', element: el, rarity: 'RARE', name: t('syn')[el] });
-    });
-    // dual combos: lit when both elements are Lv1+ (tap / hover for what they do)
-    const CB = [['melt', 0xff8a5a], ['superconduct', 0x8ae2ff], ['overload', 0xffb04a]];
-    CB.forEach(([k, col], i) => {
-      const on = Y[k], cx = x0 + 149 + (i - 1) * 104;
-      add(this.add.rectangle(cx, 207, 100, 22, on ? col : 0x2a2030, on ? 0.35 : 0.6).setStrokeStyle(2, on ? col : 0x5a4a6a));
-      const tx = add(txt(this, cx, 207, t('comboN')[k], 13, on ? '#ffffff' : '#7a6a8a', { strokeThickness: 3 })); fitText(tx, 94, 13);
-      this.tip.attach(add(this.add.rectangle(cx, 207, 100, 22, 0xffffff, 0.001).setData('row', true)), { kind: 'combo', combo: k, on, rarity: on ? 'LEGENDARY' : 'COMMON', element: 'Fire', name: t('comboN')[k] });
-    });
-    add(txt(this, x0 + 149, 231, t('statLine', pct(Y.execute).toString(), pct(Y.echo).toString(), pct(Y.greed).toString(), pct(G.perm).toString()), 12, '#e8c8ff', { strokeThickness: 3, maxW: 310 }));
-    window.DC.combosOn = CB.filter(([k]) => Y[k]).map(([k]) => k);
+    // element levels, combos and key stats live in the compact stats panel next to this list (no duplicates here)
+    const Y = stats(G.items); window.DC.combosOn = ['melt', 'superconduct', 'overload'].filter((c) => Y[c]);
     add(this.add.rectangle(x0 + 149, top - 8, 310, 2, 0xffcf40, 0.4));
     // the list lives in a masked container; rows outside the viewport are not interactive
     const list = this.listC = add(this.add.container(0, top));
@@ -1184,24 +1226,24 @@ class Pick extends Phaser.Scene {
     this.time.delayedCall(big ? 650 : 280, () => this.gearEvent(ev, icon));
     // tap anywhere to skip once the reveal has landed
     setTimeout(() => { this.canSkip = true; if (window.DC.reveal) window.DC.reveal.skippable = true; }, big ? (leg ? 1000 : 750) : 350);
-    this.autoNext = this.time.delayedCall({ COMMON: 1800, UNCOMMON: 1900, RARE: 2000, CURSED: 2100, EPIC: 2300, LEGENDARY: 2600, MYTHIC: 2800 }[tier] + (ev.purified.length ? 900 + 500 * ev.purified.length : 0) + (ev.gem ? 300 : 0), () => this.next(true));
+    this.autoNext = this.time.delayedCall(READ_MS + { COMMON: 1800, UNCOMMON: 1900, RARE: 2000, CURSED: 2100, EPIC: 2300, LEGENDARY: 2600, MYTHIC: 2800 }[tier] + (ev.purified.length ? 900 + 500 * ev.purified.length : 0) + (ev.gem ? 300 : 0), () => this.next(true));
   }
   // the found item flies into the hero's POWER box; the number rolls to the new expected damage, the gear list peeks open
   // with the new item sliding in at the top; a PURIFY GEM flies to its counter and cleanses the worst cursed item
   gearEvent(ev, icon) {
     window.DC.event = { type: ev.type, n: ev.n, gem: ev.gem, purified: ev.purified.map((p) => p.curse), curse: ev.item.curse || null };
     const it = ev.item, N = (n) => Math.max(4, Math.round(n * (this.scale.displaySize.width < 700 ? 0.6 : 1)));
-    const tx = 130, ty = 384, col = EV_COL[ev.type];
+    const tx = this.powPos.x, ty = this.powPos.y, col = EV_COL[ev.type];
     const fly = this.add.image(icon.x, icon.y, 'icons', it.frame).setScale(2).setDepth(40); if (it.cursed) fly.setTint(0xb070ff);
     this.tweens.add({ targets: fly, x: tx, y: ty, scale: 0.5, alpha: 0.3, duration: 420, ease: 'Quad.in', onComplete: () => {
       fly.destroy(); burst(this, tx, ty, col, N(20), 200, 'px').setDepth(40);
-      const lab = txt(this, tx + 4, ev.type === 'curse' ? 272 : 300, evText(ev), 22, EV_CSS[ev.type], { strokeThickness: 6, maxW: 240 }).setDepth(41);
+      const lab = txt(this, this.statX + 93, 136, evText(ev), 22, EV_CSS[ev.type], { strokeThickness: 6, maxW: 240 }).setDepth(41);
       popText(this, lab, 1); sfx(this, ev.type === 'curse' ? 'curse' : 'tick', 0.55);
       this.tweens.add({ targets: lab, y: lab.y - 30, alpha: 0, delay: 1100, duration: 400, onComplete: () => lab.destroy() });
       const after = () => {
         this.drawGems();
         this.hpT.setText(`HP ${fmt(stageHp(this.s, this.G))}`).setColor(hasCurse(this.G, 'hpUp') ? '#ffb0a0' : '#ffffff');
-        this.setPower(this.pw());
+        this.setPower(this.pw()); this.drawStats();
       };
       after();
       if (ev.gem) { // the gem pops out of the item and flies to its counter
@@ -1209,14 +1251,14 @@ class Pick extends Phaser.Scene {
         const gl = txt(this, icon.x, icon.y - 60, t('evGem'), 22, EV_CSS.gem, { strokeThickness: 6, maxW: 300 }).setDepth(42);
         popText(this, gl, 1); sfx(this, 'rare', 0.6);
         this.tweens.add({ targets: gl, alpha: 0, y: gl.y - 24, delay: 1100, duration: 400, onComplete: () => gl.destroy() });
-        this.tweens.add({ targets: g, x: 38, y: 306, scale: 1.6, duration: 520, delay: 200, ease: 'Quad.in', onComplete: () => { g.destroy(); burst(this, 38, 306, 0xd08aff, N(16), 160, 'px').setDepth(42); } });
+        this.tweens.add({ targets: g, x: GEM_ROW.x, y: GEM_ROW.y, scale: 1.6, duration: 520, delay: 200, ease: 'Quad.in', onComplete: () => { g.destroy(); burst(this, GEM_ROW.x, GEM_ROW.y, 0xd08aff, N(16), 160, 'px').setDepth(42); } });
       }
-      ev.purified.forEach((p, k) => this.time.delayedCall((ev.gem ? 760 : 380) + k * 500, () => { purifyFx(this, p, 130, 180, 60); after(); }));
+      ev.purified.forEach((p, k) => this.time.delayedCall((ev.gem ? 760 : 380) + k * 500, () => { purifyFx(this, p, this.statX + 93, 300, 60); after(); }));
       // peek: the list opens briefly so the new item slides in at the top (a pinned / hovered list just re-renders)
       if (this.gearOpen) this.renderGear();
       else if (!this.done) {
         this.gearOpen = true; this.renderGear(true); window.DC.gearPeek = true;
-        this.peekT = this.time.delayedCall(1900, () => { this.peekT = null; if (!this.gearPinned && !this.hoverPow && !this.hoverPop) this.closeGear(); });
+        this.peekT = this.time.delayedCall(PEEK_MS, () => { this.peekT = null; if (!this.gearPinned && !this.hoverPow && !this.hoverPop) this.closeGear(); });
       }
     } });
   }
@@ -1233,7 +1275,7 @@ class Pick extends Phaser.Scene {
 // Stage card for stage 1 and every BIG BOSS: who is next, how much HP, gear carried over (auto-continues fast)
 class Intro extends Phaser.Scene {
   constructor() { super('intro'); }
-  init(d) { this.run = d.run; this.s = this.run.s; this.gone = false; }
+  init(d) { this.run = d.run; this.s = this.run.s; this.gone = false; this.uiCam = null; }
   create() {
     const s = this.s, big = isBig(s), c = bossFor(s), G = this.run.G;
     window.DC.phase = 'intro'; window.DC.stage = s + 1;
@@ -1260,6 +1302,7 @@ class Intro extends Phaser.Scene {
     this.tweens.add({ targets: t3, alpha: 1, duration: 300, delay: 420 });
     weakResist(this, 330, 334, bossEl(s), 18);
     txt(this, 330, 368, t('introLine'), 26, '#ffffff', { maxW: 600 });
+    powerHud(this, expStrike(G, bossEl(s), s));
     const n = gearList(G).length;
     txt(this, 330, 404, n ? t('gearLine', n) : t('gear0'), 22, '#b8f0a0', { strokeThickness: 4, maxW: 600 });
     const tap = txt(this, 330, 520, t('tapCont'), 30, '#fff2c0', { maxW: 600 });
@@ -1276,8 +1319,10 @@ class Intro extends Phaser.Scene {
 }
 
 class Strike extends Phaser.Scene {
+  pw() { return expStrike(this.G, bossEl(this.s), this.s); }
   constructor() { super('strike'); }
   init(d) {
+    this.statsHidden = false; this.statsLocked = false; this.gearOpen = false; this.gearPinned = false; this.peekT = null; this.drag = null; this.hoverPow = false; this.hoverPop = false; this.uiCam = null; this.execd = false; this.scShown = false; this.comboN = 0; this.rc = 0; this.recoilOn = false;
     this.run = d.run; this.s = this.run.s; this.G = this.run.G; this.log = this.run.log; this.struck = false; this.leaving = false;
     this.cfg = bossFor(this.s); this.hpMax = stageHp(this.s, this.G);
   }
@@ -1298,10 +1343,10 @@ class Strike extends Phaser.Scene {
     this.tip = new Tooltip(this, () => this.items);
     const c = this.cfg;
     this.bShadow = shadow(this, c.x, LAVA_GROUND, c.body[1] * c.scale * 1.05);
-    this.hShadow = shadow(this, 230, LAVA_GROUND, 90);
+    this.hShadow = shadow(this, 270, LAVA_GROUND, 90);
     this.boss = this.add.sprite(c.x, LAVA_GROUND, c.tex).setScale(c.scale).setOrigin(0.5, 1).play(c.anim);
     this.untint();
-    this.hero = this.add.sprite(230, LAVA_GROUND, 'hero_idle').setScale(3).setOrigin(0.5, 1).play('hero-idle');
+    this.hero = this.add.sprite(270, LAVA_GROUND, 'hero_idle').setScale(3).setOrigin(0.5, 1).play('hero-idle');
     heroGlow(this.hero);
     panel(this, 640, 14, 440, 166, { border: c.big ? 0xff5a4a : undefined });
     weakResist(this, 860, 158, bossEl(s), 15);
@@ -1312,29 +1357,22 @@ class Strike extends Phaser.Scene {
     this.add.rectangle(860, 120, 400, 28, 0x220000).setStrokeStyle(3, 0xffd36a);
     this.hp = this.add.rectangle(662, 120, 396, 22, 0xd22a2a).setOrigin(0, 0.5);
     this.hpText = txt(this, 860, 120, `${fmt(this.hpMax)} / ${fmt(this.hpMax)}`, 20);
-    this.drawGearBar();
-    this.dbObjs = gemBadge(this, this.tip, this.G, 230, 296, 20);
-    this.ready = txt(this, 250, 190, t('ready', this.items.length), 28, '#ffffff', { maxW: 460 });
-    this.btn = button(this, 250, 262, t('strike'), () => this.strike(), 240);
+    this.dbObjs = [];
+    // the compact stats panel (left) stays usable until STRIKE is pressed; tap / hover opens the full GEAR list beside it
+    this.statX = 12; this.gx0 = 222; this.inv = []; this.gearOpen = false; this.seenN = this.G.seenN = this.G.items.length; this.statObjs = [];
+    this.powV = this.pw(); this.setupGearInput(); this.drawStats(); this.powN = powerHud(this, this.powV); this.setPower(this.powV, false);
+    this.ready = txt(this, 420, 190, t('ready', this.items.length), 28, '#ffffff', { maxW: 400 });
+    this.btn = button(this, 420, 262, t('strike'), () => this.strike(), 240);
     window.DC.phase = 'strike-ready';
   }
-  // bottom gear strip: newest item at the LEFT; older ones shift right; past ~20 a "+N" chip
-  drawGearBar(fresh = 0) {
-    (this.gearObjs || []).forEach((o) => o.destroy()); const o = this.gearObjs = [];
-    const list = [...this.items].reverse(), off = offEls(this.G), MAXI = 20, n = Math.min(list.length, MAXI), more = list.length - n;
-    o.push(panel(this, 8, 560, Math.max(1, n) * 50 + 16 + (more ? 64 : 0), 60));
-    list.slice(0, n).forEach((it, i) => {
-      const x = 40 + i * 50, c = this.add.container(0, 0);
-      const sq = this.add.rectangle(x, 590, 42, 42, itemCol(it), it.cursed ? 0.55 : 0.3).setStrokeStyle(2, RARITY[it.rarity].col);
-      const im = this.tip.attach(this.add.image(x, 590, 'icons', it.frame).setAlpha(!it.cursed && off.includes(it.element) ? 0.3 : 1), it);
-      if (it.cursed && it.kind === 'weapon') im.setTint(0xb070ff);
-      c.add([sq, im]); o.push(c);
-      if (i < fresh) { c.x = -60; c.alpha = 0; this.tweens.add({ targets: c, x: 0, alpha: 1, duration: 360, delay: 80, ease: 'Back.out' }); const hl = this.add.rectangle(x, 590, 46, 46).setStrokeStyle(3, 0xffd36a); o.push(hl); this.tweens.add({ targets: hl, alpha: 0, delay: 900, duration: 700 }); }
-      else if (fresh) { c.x = -50 * fresh; this.tweens.add({ targets: c, x: 0, duration: 340, ease: 'Cubic.out' }); }
-    });
-    if (more) o.push(txt(this, 24 + n * 50 + 34, 590, '+' + more, 18, '#ffe8a0', { strokeThickness: 4 }));
-  }
+  // camera shake budget: crits share one rate limit (~1 per 400ms); punch() = the big finishing shake (never stacks closer than 400ms either)
+  critShake(i) { const now = this.time.now; if (now - (this.lastShake || -1e9) < 400) return false; this.lastShake = now; this.cameras.main.shake(140, i); window.DC.shakes = (window.DC.shakes || 0) + 1; return true; }
+  punch(i, d) { const now = this.time.now; if (now - (this.lastPunch || -1e9) < 400) return; this.lastPunch = this.lastShake = now; this.cameras.main.shake(d, i, true); window.DC.shakes = (window.DC.shakes || 0) + 1; window.DC.punches = (window.DC.punches || 0) + 1; }
+  // boss knockback: an offset that decays every frame (no stacking tweens, never drifts)
+  recoil(a) { this.rc = Phaser.Math.Clamp((this.rc || 0) + a, -14, 34); }
+  recoilKick() { if (!this.boss || !this.boss.active) return; this.tweens.add({ targets: this.boss, x: this.cfg.x + 40, yoyo: true, duration: 120, ease: 'Quad.out' }); }
   update() { // shadows stay glued to the feet
+    if (this.recoilOn && this.boss && this.boss.active) { this.rc = (this.rc || 0) * 0.8; if (Math.abs(this.rc) < 0.3) this.rc = 0; this.boss.x = this.cfg.x + this.rc; const k = this.cfg.scale; this.boss.scaleX = k * (1 - Math.abs(this.rc) * 0.003); this.boss.scaleY = k * (1 + Math.abs(this.rc) * 0.002); }
     if (this.hero) { this.hShadow.x = this.hero.x; this.hShadow.setVisible(this.hero.visible && this.hero.alpha > 0.2); this.hShadow.scaleX = this.hero.scaleX / 3; }
     if (this.boss && this.boss.active) { const c = this.cfg, k = this.boss.scaleX; this.bShadow.x = this.boss.x + (c.body[0] - c.fw / 2) * k; this.bShadow.scaleX = k / c.scale; }
   }
@@ -1345,6 +1383,9 @@ class Strike extends Phaser.Scene {
     (this.dbObjs || []).forEach((o) => this.tweens.add({ targets: o, alpha: 0, duration: 200 }));
     this.btn.destroy(); this.ready.destroy();
     this.tip.hide(true);
+    // lock + hide the stats panel / GEAR list for the swing itself
+    if (this.gearOpen) this.closeGear(); this.statsLocked = true; this.statsHidden = true;
+    this.statObjs.forEach((o) => this.tweens.add({ targets: o, alpha: 0, duration: 180, onComplete: () => o.destroy() })); this.statObjs = [];
     this.charge();
   }
   charge() {
@@ -1377,7 +1418,7 @@ class Strike extends Phaser.Scene {
     const L = r.L, cam = this.cameras.main, hd = this.head(), N = (n) => Math.max(4, Math.round(n * this.lite()));
     window.DC.head = hd;
     sfx(this, 'hit', 0.9);
-    cam.shake(300, 0.02);
+    this.recoil(22); this.recoilOn = true;
     this.boss.setTintFill(0xffffff); this.time.delayedCall(110, () => this.untint());
     this.slash(hd.x, hd.y);
     burst(this, hd.x, hd.y, 0xffd36a, N(40), 380).setDepth(41);
@@ -1479,7 +1520,7 @@ class Strike extends Phaser.Scene {
     if (chain && K === 'hit' && cv) { const cl = txt(this, x + 60, y + 30, `${t('chainHit', chain)} +${fmt(cv)}`, 20, '#ffe866', { strokeThickness: 5 }).setDepth(44); this.tweens.add({ targets: cl, alpha: 0, y: cl.y - 40, delay: 300, duration: life, onComplete: () => cl.destroy() }); }
     // the boss flinches with every number (light on fast volleys)
     this.boss.setTint(neg ? 0xc090ff : 0xffd0b0); this.time.delayedCall(60, () => this.untint());
-    if (!fast || k % 2 === 0) this.tweens.add({ targets: this.boss, x: this.cfg.x + (neg ? -4 : 6), yoyo: true, duration: 40 });
+    this.recoil(neg ? -5 : crit ? 14 : fast ? 5 : 9);   // local boss knockback instead of a camera shake
     const BC = { vuln: 0x6ad8ff, burn: 0xff7a2a };
     const bc = neg ? CURSE_COL : crit ? 0xffd23a : BC[K] || (K === 'hit' && s.h.it ? EL_COLOR[s.h.it.element] : 0xffffff);
     burst(this, x, y, bc, Math.max(3, Math.round((crit ? 18 : 8) * this.lite())), 220, 'px').setDepth(43);
@@ -1505,7 +1546,7 @@ class Strike extends Phaser.Scene {
     const line = this.add.rectangle(hd.x, -20, 14, 0, 0xff3a6a).setOrigin(0.5, 0).setDepth(45).setBlendMode(Phaser.BlendModes.ADD);
     this.tweens.add({ targets: line, height: LAVA_GROUND + 20, duration: 180, ease: 'Quad.in', onComplete: () => {
       this.slash(hd.x, hd.y, 1.6, 0xff3a6a); burst(this, hd.x, hd.y, 0xff3a6a, N(50), 420).setDepth(42);
-      cam.shake(320, 0.018); this.hitStop(110); sfx(this, 'hit', 0.9); sfx(this, 'shatter', 0.5);
+      this.punch(0.024, 420); this.hitStop(110); sfx(this, 'hit', 0.9); sfx(this, 'shatter', 0.5);
       this.tweens.add({ targets: line, alpha: 0, duration: 500, onComplete: () => line.destroy() });
       this.hp.width = 0; this.hpText.setText(`0 / ${fmt(this.hpMax)}`);
     } });
@@ -1528,12 +1569,12 @@ class Strike extends Phaser.Scene {
     if (s.kind === 'boom') { // OVERLOAD: fire + lightning explosion rings
       this.ring(hd.x, hd.y, 0xffa040, 12, 9); this.ring(hd.x, hd.y, 0xffe04a, 6, 12, 120);
       burst(this, hd.x, hd.y, 0xff7a2a, N(50), 420).setDepth(42); burst(this, hd.x, hd.y, 0xffe04a, N(30), 360, 'spark').setDepth(42);
-      sfx(this, 'boom', 0.7); cam.shake(260, 0.014); return;
+      sfx(this, 'boom', 0.7); this.recoil(30); this.critShake(0.008); return;
     }
     // weapon hits: a gold crescent + kick on a crit, THUNDER bolts on a chain (both rate-limited on long volleys)
     if (crit && now - (this.lastCritFx || 0) > (many ? 160 : 60)) {
       this.lastCritFx = now; this.slash(hd.x + Phaser.Math.Between(-40, 40), hd.y + Phaser.Math.Between(-30, 30), many ? 0.9 : 1.2, 0xffd23a);
-      cam.shake(120, many ? 0.006 : 0.01); if (!many) this.hitStop(45);
+      if (this.critShake(many ? 0.006 : 0.009) && !many) this.hitStop(45);
     }
     if (chain && now - (this.lastChainFx || 0) > (many ? 200 : 90)) {
       this.lastChainFx = now;
@@ -1552,6 +1593,8 @@ class Strike extends Phaser.Scene {
     this.finalLabel(r);
     window.DC.phase = 'impact-done';
     const L = r.L, cam = this.cameras.main;
+    this.recoilOn = false; if (this.boss && this.boss.active) this.boss.setX(this.cfg.x).setScale(this.cfg.scale);
+    if (L >= 1 && !r.executed) { this.punch(Math.min(0.03, 0.014 + 0.004 * L), 380 + 60 * L); this.recoilKick(); }
     this.time.delayedCall(800 + 220 * L, () => {
       cam.zoomTo(1, 400); cam.pan(W / 2, H / 2, 400);
       this.time.delayedCall(420, () => L >= 1 ? this.killSeq(r) : this.loseSeq());
@@ -1568,8 +1611,7 @@ class Strike extends Phaser.Scene {
     this.tweens.add({ targets: this.dmg, scale: this.dmgScale, duration: 220, ease: 'Back.out' });
     this.tweens.add({ targets: this.dmg, angle: { from: L % 2 ? -6 : 6, to: 0 }, duration: 260 });
     if (L === 1) { // HP hits zero
-      sfx(this, 'hit', 1); sfx(this, 'banner', 0.5);
-      cam.shake(260, T.shake);
+      sfx(this, 'hit', 1); sfx(this, 'banner', 0.5); this.recoil(18);
       this.hp.setFillStyle(0xffffff); this.time.delayedCall(90, () => this.hp.setFillStyle(0xd22a2a));
       this.boss.setTint(0xff6a5a); this.time.delayedCall(120, () => this.untint());
       burst(this, hd.x, hd.y, T.col, N(40), 380).setDepth(41);
@@ -1577,8 +1619,8 @@ class Strike extends Phaser.Scene {
     }
     // L >= 2: overkill tiers
     sfx(this, T.snd, 0.75 + 0.08 * L); if (L >= 3) sfx(this, 'hit', 1);
-    this.hitStop(T.stop);
-    cam.shake(380 + L * 140, T.shake);
+    this.hitStop(T.stop); this.recoil(16 + L * 3);
+    this.critShake(Math.min(0.012, T.shake * 0.25));   // tier-ups mid-volley: a short kick, same rate limit
     if (L >= 4) softFlash(this, T.col, 0.28, 240); // the only strike flash: soft, tinted, top tiers, rate-limited
     cam.zoomTo(1.06 + 0.04 * L, 90, 'Quad.out', true);
     this.time.delayedCall(200, () => cam.zoomTo(1.06, 260, 'Sine.easeOut', true));
@@ -1650,14 +1692,13 @@ class Strike extends Phaser.Scene {
     this.boss.stop();
     if (L >= 3) { // blown apart
       sfx(this, 'shatter', 0.9); sfx(this, L >= 4 ? 'nuke' : 'boom', 0.8);
-      cam.shake(700, 0.03);
+      this.punch(0.026, 600);
       this.ring(hd.x, hd.y - 20, OK_TIERS[L].col, 14, 14, 0, 800);
       this.shatter(L >= 4 ? 9 : 6, L >= 4 ? 7 : 5, L >= 5 ? 640 : L === 4 ? 520 : 360);
       for (let k = 0; k < 3 + L; k++) this.time.delayedCall(k * 110, () => burst(this, hd.x + Phaser.Math.Between(-120, 120), hd.y + Phaser.Math.Between(-60, 80), k % 2 ? 0xff7a2a : OK_TIERS[L].col, N(40), 420).setDepth(41));
       window.DC.blownApart = true;
     } else { // falls / gets knocked back
       sfx(this, 'win');
-      cam.shake(500, 0.02);
       for (let k = 0; k < 4; k++) this.time.delayedCall(k * 150, () => burst(this, hd.x - 40 + k * 50, LAVA_GROUND - 100, 0xffcf40, N(40), 380));
       this.boss.setTint(0x777777);
       if (L === 2) this.tweens.add({ targets: this.boss, x: this.boss.x + 180, angle: 18, alpha: 0, scaleY: this.cfg.scale * 0.8, duration: 900, ease: 'Cubic.in' });
@@ -1696,6 +1737,7 @@ class Strike extends Phaser.Scene {
       popText(this, pp, 1); this.tweens.add({ targets: pp, alpha: 0, y: pp.y - 20, delay: 1200, duration: 400, onComplete: () => pp.destroy() });
       window.DC.perm = this.G.perm;
     }
+    this.clearTxt = [ban, sub];
     this.time.delayedCall(big ? 900 : 600, () => this.bonusMoment());
   }
   // OVERKILL BONUS: reward scaled by damage / boss HP, auto-opened, added to the gear
@@ -1706,49 +1748,57 @@ class Strike extends Phaser.Scene {
     const R = RARITY[it.rarity], leg = LEG_R[it.rarity], jack = b.tier === 'jackpot';
     window.DC.phase = 'bonus'; window.DC.bonus = { tier: b.tier, type: b.type, name: it.name, rule: ruleText(it), rarity: it.rarity };
     this.log[this.log.length - 1].bonus = b.tier;
-    const X = 860;
-    const title = txt(this, X, 352, t('bonusTitle'), 40, '#ffd36a', { strokeThickness: 8, stroke: '#4a2400', maxW: 560 }).setDepth(62);
+    // centred reveal: dim the arena, the clear banner steps aside, the chest pops open mid-screen, a big item card below
+    const X = W / 2;
+    (this.clearTxt || []).forEach((o) => this.tweens.add({ targets: o, alpha: 0, duration: 250 }));
+    const dimR = this.add.rectangle(-100, -100, W + 200, H + 200, 0x05030a, 1).setOrigin(0).setDepth(60.5).setAlpha(0);
+    this.tweens.add({ targets: dimR, alpha: 0.55, duration: 300 });
+    const title = txt(this, X, 62, t('bonusTitle'), 40, '#ffd36a', { strokeThickness: 8, stroke: '#4a2400', maxW: 560 }).setDepth(62);
     popText(this, title, 1); sfx(this, 'banner', 0.7);
-    const tier = txt(this, X, 392, t('bonusTier')[b.tier], 24, jack ? '#ffcf40' : b.tier === 'chest' ? '#d58cff' : '#e8dcff', { strokeThickness: 5, maxW: 560 }).setDepth(62);
+    const tier = txt(this, X, 100, t('bonusTier')[b.tier], 24, jack ? '#ffcf40' : b.tier === 'chest' ? '#d58cff' : '#e8dcff', { strokeThickness: 5, maxW: 560 }).setDepth(62);
     tier.setAlpha(0); this.tweens.add({ targets: tier, alpha: 1, duration: 200, delay: 150 });
-    const CX = X - 80, IX = X + 95; // chest on the left, the item floats out to its right (clear of the banner text)
-    shadow(this, CX, LAVA_GROUND, 100).setDepth(61);
-    const ch = this.add.image(CX, -60, 'chest_' + it.element).setScale(3.2).setOrigin(0.5, 1).setDepth(62);
-    if (jack) { const g = this.add.image(CX, LAVA_GROUND - 50, 'glowdot').setTint(0xffcf40).setBlendMode(Phaser.BlendModes.ADD).setDepth(61).setScale(2.5).setAlpha(0.6); this.tweens.add({ targets: g, scale: 3.2, yoyo: true, repeat: 4, duration: 140 }); this.time.delayedCall(1400, () => g.destroy()); sfx(this, 'charge', 0.6); }
-    this.tweens.add({ targets: ch, y: LAVA_GROUND + 6, duration: 380, ease: 'Bounce.out', onComplete: () => {
+    const CX = X, IX = X, CY = 330; // chest mid-screen, the item rises above it
+    const ch = this.add.image(CX, -60, 'chest_' + it.element).setScale(2.6).setOrigin(0.5, 1).setDepth(62);
+    if (jack) { const g = this.add.image(CX, CY - 40, 'glowdot').setTint(0xffcf40).setBlendMode(Phaser.BlendModes.ADD).setDepth(61).setScale(2.5).setAlpha(0.6); this.tweens.add({ targets: g, scale: 3.2, yoyo: true, repeat: 4, duration: 140 }); this.time.delayedCall(1400, () => g.destroy()); sfx(this, 'charge', 0.6); }
+    this.tweens.add({ targets: ch, y: CY, duration: 380, ease: 'Bounce.out', onComplete: () => {
       sfx(this, 'open', 0.5);
       this.tweens.add({ targets: ch, angle: { from: -7, to: 7 }, yoyo: true, repeat: jack ? 4 : 2, duration: 55, onComplete: () => {
         ch.setAngle(0).setTexture('open_' + it.element);
-        const iy = LAVA_GROUND - 75;
+        const iy = 175;
         if (it.rarity !== 'COMMON') {
           const rays = this.add.image(IX, iy, 'rays').setTint(R.col).setBlendMode(Phaser.BlendModes.ADD).setDepth(62).setScale(0).setAlpha(0.7);
           this.tweens.add({ targets: rays, scale: leg ? 1.2 : 0.85, duration: 360, ease: 'Back.out' }); this.tweens.add({ targets: rays, angle: 360, duration: 6000, repeat: -1 });
         }
-        burst(this, CX, LAVA_GROUND - 40, R.col, N(leg ? 80 : 40), leg ? 460 : 320).setDepth(63);
-        this.ring(CX, LAVA_GROUND - 40, R.col, leg ? 10 : 6, leg ? 8 : 4);
+        burst(this, CX, CY - 40, R.col, N(leg ? 80 : 40), leg ? 460 : 320).setDepth(63);
+        this.ring(CX, CY - 40, R.col, leg ? 10 : 6, leg ? 8 : 4);
         if (leg) { softFlash(this, 0xffe6a0, 0.22, 260); sfx(this, 'legendary', 0.85); this.cameras.main.shake(400, 0.012);
-          const coins = this.add.particles(0, -20, 'coin', { x: { min: 600, max: 1150 }, lifespan: 1800, speedY: { min: 120, max: 240 }, gravityY: 260, rotate: { min: 0, max: 360 }, scale: { min: 1.4, max: 2.2 }, frequency: 30 / this.lite() }).setDepth(63);
+          const coins = this.add.particles(0, -20, 'coin', { x: { min: 100, max: 1100 }, lifespan: 1800, speedY: { min: 120, max: 240 }, gravityY: 260, rotate: { min: 0, max: 360 }, scale: { min: 1.4, max: 2.2 }, frequency: 30 / this.lite() }).setDepth(63);
           this.time.delayedCall(900, () => coins.stop()); }
         else if (BIG_R[it.rarity]) { sfx(this, 'epic', 0.7); this.cameras.main.shake(250, 0.008); }
         else sfx(this, it.rarity === 'COMMON' ? 'open' : 'rare', 0.6);
-        const icon = this.add.image(CX, LAVA_GROUND - 40, 'icons', it.frame).setDepth(64).setScale(1);
+        const icon = this.add.image(CX, CY - 40, 'icons', it.frame).setDepth(64).setScale(1);
         try { if (icon.preFX && it.rarity !== 'COMMON') icon.preFX.addGlow(R.col, 4, 0, false, 0.1, 10); } catch (e) {}
-        this.tweens.add({ targets: icon, x: IX, y: iy, scale: 3, duration: 420, ease: 'Back.out' });
-        const nm = txt(this, X, 560, it.name, 24, EL_CSS[it.element], { strokeThickness: 5, maxW: 600 }).setDepth(64).setAlpha(0);
+        this.tweens.add({ targets: icon, x: IX, y: iy, scale: 3.4, duration: 420, ease: 'Back.out' });
+        // the item card: rarity, name, effect (+ the gear event below)
+        const cardBg = panel(this, X - 340, 352, 680, 172, { border: R.col, alpha: 0.95 }).setDepth(63).setAlpha(0);
+        const rt = txt(this, X, 378, t('rar')[it.rarity], 20, R.css, { strokeThickness: 5, maxW: 600 }).setDepth(64).setAlpha(0);
+        const nm = txt(this, X, 414, it.name, 30, it.cursed ? '#d9a6ff' : EL_CSS[it.element], { strokeThickness: 6, maxW: 640 }).setDepth(64).setAlpha(0);
         const ev = equip(this.G, it, this.s);
-        const rl = txt(this, X, 592, `${t('rar')[it.rarity]} · ${ruleText(it)}`, 22, ruleCol(it), { strokeThickness: 5, maxW: 600 }).setDepth(64).setAlpha(0);
-        this.tweens.add({ targets: [nm, rl], alpha: 1, duration: 200, delay: 200 });
+        this.time.delayedCall(650, () => this.setPower(this.pw()));
+        const rl = txt(this, X, 456, ruleText(it), 28, ruleCol(it), { strokeThickness: 6, maxW: 640 }).setDepth(64).setAlpha(0);
+        this.tweens.add({ targets: [cardBg, rt, nm, rl], alpha: 1, duration: 200, delay: 200 }); popText(this, nm, 1);
+        window.DC.bonusCard = { x: X, y: 438, name: it.name, rarity: it.rarity };
         window.DC.event = { type: ev.type, n: ev.n, gem: ev.gem, purified: ev.purified.map((p) => p.curse) };
         // equip it: the event label pops above the item, the gear bar redraws
         this.time.delayedCall(600, () => {
-          const el = txt(this, IX, iy + 66, ev.gem ? `${evText(ev)}  ${t('evGem')}` : evText(ev), 22, ev.gem ? EV_CSS.gem : EV_CSS[ev.type], { strokeThickness: 6, maxW: 330 }).setDepth(65);
+          const el = txt(this, X, 498, ev.gem ? `${evText(ev)}  ${t('evGem')}` : evText(ev), 22, ev.gem ? EV_CSS.gem : EV_CSS[ev.type], { strokeThickness: 6, maxW: 330 }).setDepth(65);
           popText(this, el, 1); sfx(this, 'tick', 0.55);
-          this.drawGearBar(1); this.gearObjs.forEach((o, i) => o.setDepth(i ? 64 : 63));
-          ev.purified.forEach((p, k) => this.time.delayedCall(250 + k * 450, () => { purifyFx(this, p, IX, iy - 20, 66); this.drawGearBar(); this.gearObjs.forEach((o, i) => o.setDepth(i ? 64 : 63)); }));
-          burst(this, 40, 590, EV_COL[ev.type] || 0x8aff7a, N(16), 160, 'px').setDepth(64);
+          ev.purified.forEach((p, k) => this.time.delayedCall(250 + k * 450, () => { purifyFx(this, p, IX, iy, 66); }));
           window.DC.bonusShown = true;
         });
-        this.time.delayedCall(leg ? 2200 : 1800, () => this.toNextStage());
+        // stays up long enough to read; tap to continue sooner
+        this.time.delayedCall(leg ? 3600 : 3000, () => this.toNextStage());
+        this.time.delayedCall(700, () => this.input.once('pointerdown', () => this.toNextStage()));
       } });
     } });
   }
@@ -1823,6 +1873,9 @@ class Strike extends Phaser.Scene {
     button(this, W / 2, 560, t('playAgain'), () => { restoreMusic(this); this.scene.start('intro', { run: newRun() }); }, 300).setDepth(D);
   }
 }
+
+// the Strike scene's pre-swing moment reuses the pick screen's stats panel + GEAR list (one implementation)
+['drawStats', 'drawGems', 'setupGearInput', 'setPower', 'inPopup', 'openGear', 'maybeCloseGear', 'closeGear', 'renderGear', 'addInvRow', 'scrollTo', 'updateRowInput'].forEach((k) => { Strike.prototype[k] = Pick.prototype[k]; });
 
 function startGame() {
   if (window.__dcStarted) return; window.__dcStarted = true;
