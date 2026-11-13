@@ -51,7 +51,7 @@ const ICONS = {
   cursed: [[27, 'Relic'], [28, 'Idol'], [29, 'Grimoire'], [30, 'Shard']],
 };
 const NAMES = {
-  pre: { Fire: ['Ember', 'Blaze', 'Inferno', 'Cinder', 'Frostfire'], Ice: ['Frost', 'Glacier', 'Rime', 'Winter', 'Frostfire'], Thunder: ['Storm', 'Volt', 'Thunder', 'Tempest', 'Skybolt'] },
+  pre: { Fire: ['Ember', 'Blaze', 'Inferno', 'Cinder', 'Magma'], Ice: ['Frost', 'Glacier', 'Rime', 'Winter', 'Hoarfrost'], Thunder: ['Storm', 'Volt', 'Thunder', 'Tempest', 'Skybolt'] },
   mid: ['Dragonbone', 'Runed', 'Ancient', 'Moonsteel', 'Obsidian', 'Royal', 'Elven', 'Dwarven'],
   cursed: ['Cursed', 'Hexed', 'Doomed', 'Haunted'],
 };
@@ -64,7 +64,8 @@ function nameItem(it) {
 }
 // Every item states its own damage rule.
 const ruleText = (it) => it.kind === 'cursed' ? `${it.flat} ATK (cursed)` : it.mult ? `+${it.mult.toFixed(1)}x total damage` : `+${it.flat} ATK`;
-const setText = (it) => `${it.element} set: ${RULES.setCount} ${it.element} items = x${RULES.setMult} damage`;
+const elemCount = (items, el) => items.filter((i) => i.element === el).length;
+const setLine = (it, items) => `${it.element} set: ${RULES.setCount} ${it.element} items = x${RULES.setMult} damage (you have ${Math.min(elemCount(items, it.element), RULES.setCount)}/${RULES.setCount})`;
 const itemCol = (it) => it.kind === 'cursed' ? CURSE_COL : EL_COLOR[it.element];
 const RARITY = {
   COMMON: { css: '#d8d8d8', col: 0xd8d8d8, n: 10, shake: 0 },
@@ -127,6 +128,53 @@ function burst(scene, x, y, color, n, speed = 260, tex = 'spark') {
 function popText(scene, t, scale = 1) {
   t.setScale(0);
   scene.tweens.add({ targets: t, scale: { from: 0, to: scale * 1.35 }, duration: 160, ease: 'Quad.out', onComplete: () => scene.tweens.add({ targets: t, scale, duration: 160, ease: 'Back.out' }) });
+}
+// Item tooltip: hover (mouse) or tap to toggle (touch). Always clamped inside the 1200x628 canvas.
+class Tooltip {
+  constructor(scene, getItems) {
+    this.scene = scene; this.getItems = getItems; this.pinned = false; this.cur = null;
+    this.c = scene.add.container(0, 0).setDepth(1000).setVisible(false);
+    scene.input.on('pointerdown', (p, over) => { if (!over.some((o) => o.getData && o.getData('item'))) this.hide(true); });
+  }
+  get visible() { return this.c.visible; }
+  attach(obj, it) {
+    obj.setData('item', it).setInteractive({ useHandCursor: true });
+    obj.on('pointerover', (p) => { if (!p.wasTouch && !this.pinned) this.show(it, obj); });
+    obj.on('pointerout', (p) => { if (!p.wasTouch && !this.pinned) this.hide(); });
+    obj.on('pointerdown', () => {
+      if (this.pinned && this.cur === it) { this.hide(true); return; }
+      this.show(it, obj); this.pinned = true;
+    });
+    return obj;
+  }
+  show(it, obj) {
+    const sc = this.scene, items = this.getItems(), R = RARITY[it.rarity];
+    this.c.removeAll(true); this.cur = it;
+    const w = 470, lines = [
+      [it.name, 26, it.kind === 'cursed' ? '#d9a6ff' : EL_CSS[it.element]],
+      [`${it.rarity} · ${it.kind === 'cursed' ? 'Cursed item' : it.kind[0].toUpperCase() + it.kind.slice(1)} · ${it.element}`, 19, R.css],
+      [ruleText(it), 28, it.kind === 'cursed' ? '#ff6a7a' : it.mult ? '#ffd84a' : '#b8f0a0'],
+      [setLine(it, items), 18, EL_CSS[it.element]],
+    ];
+    const h = 34 + lines.reduce((a, l) => a + l[1] + 12, 0);
+    const g = panel(sc, 0, 0, w, h, { border: R.col, alpha: 0.95 });
+    this.c.add(g);
+    let y = 18;
+    lines.forEach(([t, size, col]) => {
+      const tx = sc.add.text(w / 2, y, t, { fontFamily: FONT, fontSize: size + 'px', color: col, fontStyle: 'bold', stroke: '#140812', strokeThickness: 4, align: 'center', wordWrap: { width: w - 30 } }).setOrigin(0.5, 0);
+      this.c.add(tx); y += size + 12;
+    });
+    // place beside the icon, flip to the other side / clamp so it never leaves the canvas
+    // bigger on small screens (mobile / tiny iframe) so it stays readable
+    const k = sc.scale.displaySize.width < 700 ? 1.55 : 1, sw = w * k, sh = h * k;
+    const b = obj.getBounds();
+    let x = b.right + 14; if (x + sw > W - 8) x = b.left - 14 - sw;
+    x = Phaser.Math.Clamp(x, 8, W - sw - 8);
+    const ty = Phaser.Math.Clamp(b.centerY - sh / 2, 8, H - sh - 8);
+    this.c.setScale(k).setPosition(x, ty).setScrollFactor(0).setVisible(true);
+    window.DC.tooltip = { name: it.name, x, y: ty, w: sw, h: sh };
+  }
+  hide(force) { if (force) this.pinned = false; this.c.setVisible(false); this.cur = null; window.DC.tooltip = null; }
 }
 function heroGlow(spr) { try { if (spr.preFX) spr.preFX.addGlow(0xfff2b0, 3, 0, false, 0.1, 10); } catch (e) {} }
 
@@ -202,6 +250,7 @@ class Pick extends Phaser.Scene {
     panel(this, 250, 14, 360, 92);
     txt(this, 430, 46, `CHEST ${this.round + 1} / ${RULES.rounds}`, 40, '#ffd36a');
     txt(this, 430, 84, 'Pick one', 22, '#f0e6ff');
+    this.tip = new Tooltip(this, () => this.items);
     this.drawInventory();
     this.offer = rollOffer(Math.random);
     const xs = [170, 430, 690], base = 390;
@@ -223,21 +272,33 @@ class Pick extends Phaser.Scene {
       const sp = this.add.particles(x, base - 70, 'px', { x: { min: -60, max: 60 }, y: { min: -50, max: 40 }, lifespan: 900, speedY: { min: -30, max: -10 }, scale: { start: 1.5, end: 0 }, frequency: 260, tint: EL_COLOR[c.element], blendMode: 'ADD' });
       return { c, x, y: base - 80, spr, glow, gem, label, el, zone, sp };
     });
-    this.input.on('pointerdown', () => { if (this.canSkip) this.next(); });
+    this.input.on('pointerdown', (p, over) => { if (this.canSkip && !over.some((o) => o.getData && o.getData('item'))) this.next(); });
   }
   drawInventory() {
     const x0 = 880, y0 = 150;
     panel(this, x0 - 18, y0 - 30, 334, 486);
-    txt(this, x0 + 149, y0 + 2, 'BAG', 26, '#ffd36a');
+    txt(this, x0 + 149, y0 - 2, 'BAG', 26, '#ffd36a');
+    this.counters = ELEMENTS.map((el, k) => {
+      const cx = x0 - 4 + k * 98;
+      this.add.star(cx + 6, y0 + 30, 4, 4, 9, EL_COLOR[el]).setStrokeStyle(2, 0x000000);
+      return this.add.text(cx + 16, y0 + 30, '', { fontFamily: FONT, fontSize: '16px', color: EL_CSS[el], fontStyle: 'bold', stroke: '#140812', strokeThickness: 3 }).setOrigin(0, 0.5);
+    });
+    this.updateCounters();
     for (let i = 0; i < RULES.rounds; i++) this.addInvRow(i, this.items[i]);
   }
+  updateCounters() {
+    ELEMENTS.forEach((el, k) => {
+      const n = elemCount(this.items, el);
+      this.counters[k].setText(`${el} ${Math.min(n, RULES.setCount)}/${RULES.setCount}`).setColor(n >= RULES.setCount ? '#ffffff' : EL_CSS[el]);
+    });
+  }
   addInvRow(i, it) {
-    const x0 = 880, y = 205 + i * 51;
+    const x0 = 880, y = 226 + i * 48;
     if (!it) { this.add.rectangle(x0 + 21, y, 40, 40, 0xffffff, 0.06).setStrokeStyle(1, 0x5a4a3a); return; }
     this.add.rectangle(x0 + 21, y, 42, 42, itemCol(it), 0.3).setStrokeStyle(2, itemCol(it));
-    this.add.image(x0 + 21, y, 'icons', it.frame);
+    this.tip.attach(this.add.image(x0 + 21, y, 'icons', it.frame), it);
     const nm = it.name.length > 22 ? it.name.slice(0, 21) + '…' : it.name;
-    this.add.text(x0 + 50, y - 20, nm, { fontFamily: FONT, fontSize: '17px', color: '#ffffff', fontStyle: 'bold' });
+    this.add.text(x0 + 50, y - 19, nm, { fontFamily: FONT, fontSize: '17px', color: '#ffffff', fontStyle: 'bold' });
     this.add.text(x0 + 50, y + 1, ruleText(it), { fontFamily: FONT, fontSize: '16px', color: it.kind === 'cursed' ? '#ff7a8a' : it.mult ? '#ffd84a' : '#b8f0a0' });
   }
   choose(i) {
@@ -263,7 +324,7 @@ class Pick extends Phaser.Scene {
     if (it.rarity === 'CURSED') this.cameras.main.flash(200, 120, 0, 160);
     sfx(this, 'open');
     sfx(this, it.kind === 'cursed' ? 'curse' : it.rarity === 'COMMON' ? 'open' : 'rare', it.rarity === 'COMMON' ? 0.4 : 0.7);
-    const icon = this.add.image(ch.x, ch.y, 'icons', it.frame).setScale(1);
+    const icon = this.tip.attach(this.add.image(ch.x, ch.y, 'icons', it.frame).setScale(1), it);
     this.tweens.add({ targets: icon, y: ch.y - 150, scale: 3, duration: 450, ease: 'Back.out' });
     // item card with the item's own damage rule
     const card = this.add.container(430, 540);
@@ -271,15 +332,18 @@ class Pick extends Phaser.Scene {
     const tag = txt(this, -250, -38, it.rarity, 16, R.css, { strokeThickness: 4 });
     const t1 = txt(this, 30, -36, it.name, 28, it.kind === 'cursed' ? '#d9a6ff' : EL_CSS[it.element]);
     const t2 = txt(this, 0, 2, ruleText(it), 32, it.kind === 'cursed' ? '#ff6a7a' : it.mult ? '#ffd84a' : '#b8f0a0');
-    const t3 = txt(this, 0, 38, setText(it), 18, EL_CSS[it.element], { strokeThickness: 4 });
+    const t3 = txt(this, 0, 38, setLine(it, this.items), 18, EL_CSS[it.element], { strokeThickness: 4 });
     card.add([pg, tag, t1, t2, t3]); card.setAlpha(0);
     this.tweens.add({ targets: card, alpha: 1, duration: 150 }); popText(this, card, 1);
     this.addInvRow(this.items.length - 1, it);
+    this.updateCounters();
     this.time.delayedCall(350, () => { this.canSkip = true; });
-    this.autoNext = this.time.delayedCall(1900, () => this.next());
+    this.autoNext = this.time.delayedCall(1900, () => this.next(true));
   }
-  next() {
-    if (this.done) return; this.done = true;
+  next(fromTimer) {
+    if (this.done) return;
+    if (fromTimer && this.tip && this.tip.visible) { this.autoNext = this.time.delayedCall(600, () => this.next(true)); return; } // let players read
+    this.done = true; if (this.tip) this.tip.hide(true);
     if (this.autoNext) this.autoNext.remove();
     if (this.round + 1 >= RULES.rounds) this.scene.start('strike', { items: this.items });
     else this.scene.start('pick', { round: this.round + 1, items: this.items });
@@ -294,6 +358,7 @@ class Strike extends Phaser.Scene {
     backdrop(this, 'bg_lava', 0.12);
     this.res = computeDamage(this.items);
     window.DC.result = this.res;
+    this.tip = new Tooltip(this, () => this.items);
     this.dShadow = shadow(this, 900 + 94, LAVA_GROUND, 290);
     this.hShadow = shadow(this, 230, LAVA_GROUND, 90);
     this.dragon = this.add.sprite(900, LAVA_GROUND, 'dragon_idle').setScale(4).setOrigin(0.5, 1).play('dragon-idle');
@@ -307,7 +372,7 @@ class Strike extends Phaser.Scene {
     panel(this, 8, 560, 8 * 50 + 16, 60);
     this.items.forEach((it, i) => {
       this.add.rectangle(40 + i * 50, 590, 42, 42, itemCol(it), 0.3).setStrokeStyle(2, itemCol(it));
-      this.add.image(40 + i * 50, 590, 'icons', it.frame);
+      this.tip.attach(this.add.image(40 + i * 50, 590, 'icons', it.frame), it);
     });
     this.ready = txt(this, 250, 190, 'Your gear is ready.', 28);
     this.btn = button(this, 250, 262, 'STRIKE!', () => this.strike(), 240);
@@ -334,11 +399,12 @@ class Strike extends Phaser.Scene {
       },
     });
   }
-  slash(x, y) {
+  head() { return { x: this.dragon.x - 288 + 70 * 4, y: LAVA_GROUND - 30 * 4 }; } // dragon faces left; head ~ frame (70,34)
+  slash(x, y) { // crescent arcs centred on the head
     for (let k = 0; k < 3; k++) {
       const g = this.add.graphics().setBlendMode(Phaser.BlendModes.ADD);
       g.lineStyle(14 - k * 4, k === 0 ? 0xffffff : 0xffd36a, 1 - k * 0.25);
-      g.beginPath(); g.arc(x, y, 120 + k * 18, Phaser.Math.DegToRad(-120), Phaser.Math.DegToRad(40), false); g.strokePath();
+      g.beginPath(); g.arc(x, y, 62 + k * 16, Phaser.Math.DegToRad(-150), Phaser.Math.DegToRad(30), false); g.strokePath();
       g.setAlpha(0);
       this.tweens.add({ targets: g, alpha: { from: 1, to: 0 }, duration: 380, delay: k * 50, onComplete: () => g.destroy() });
     }
@@ -348,9 +414,10 @@ class Strike extends Phaser.Scene {
     const cam = this.cameras.main;
     cam.shake(450, 0.025); cam.flash(180, 255, 255, 255);
     this.dragon.setTintFill(0xffffff); this.time.delayedCall(110, () => this.dragon.clearTint());
-    this.slash(this.dragon.x - 140, LAVA_GROUND - 130);
-    burst(this, this.dragon.x - 120, LAVA_GROUND - 130, 0xffd36a, 50, 420);
-    burst(this, this.dragon.x - 120, LAVA_GROUND - 130, 0xff5a2a, 30, 300, 'px');
+    const hd = this.head(); window.DC.head = hd;
+    this.slash(hd.x, hd.y);
+    burst(this, hd.x, hd.y, 0xffd36a, 50, 420);
+    burst(this, hd.x, hd.y, 0xff5a2a, 30, 300, 'px');
     // brief hit-stop for weight
     this.anims.pauseAll(); this.time.delayedCall(90, () => this.anims.resumeAll());
     const parts = [`ATK ${r.flat}`, `x${(1 + r.mult).toFixed(1)}`]; if (r.set > 1) parts.push(`x${r.set} ${r.setEl} set`);
@@ -412,18 +479,19 @@ class Strike extends Phaser.Scene {
   end(win) {
     window.DC.phase = 'end'; window.DC.win = win;
     this.add.rectangle(0, 0, W, H, 0x000000, 0.65).setOrigin(0);
-    panel(this, W / 2 - 360, 70, 720, 400, { border: win ? 0xffcf40 : 0xd04a3a });
+    panel(this, W / 2 - 360, 70, 720, 340, { border: win ? 0xffcf40 : 0xd04a3a });
     const t = txt(this, W / 2, 140, win ? 'DRAGON SLAIN!' : 'THE DRAGON ATE YOU', 64, win ? '#ffd36a' : '#ff5a4a', { strokeThickness: 10 });
     popText(this, t, 1);
     txt(this, W / 2, 215, `You dealt ${this.res.total} / ${RULES.dragonHP}`, 32);
     txt(this, W / 2, 262, win ? 'Legends will sing of your loot.' : 'Read your items. Choose better.', 24, '#e8dcff');
     this.items.forEach((it, i) => {
       const x = W / 2 - 4 * 70 + 35 + i * 70;
-      this.add.rectangle(x, 340, 56, 56, itemCol(it), 0.3).setStrokeStyle(2, itemCol(it));
-      this.add.image(x, 340, 'icons', it.frame).setScale(1.5);
+      this.add.rectangle(x, 336, 56, 56, itemCol(it), 0.3).setStrokeStyle(2, itemCol(it));
+      this.tip.attach(this.add.image(x, 336, 'icons', it.frame).setScale(1.5), it);
     });
     if (win) burst(this, W / 2, 140, 0xffcf40, 60, 420);
-    button(this, W / 2, 545, 'PLAY AGAIN', () => this.scene.start('pick', { round: 0, items: [] }), 300);
+    txt(this, W / 2, 384, 'Tap an item to inspect it', 16, '#bba8d0', { strokeThickness: 3 });
+    button(this, W / 2, 470, 'PLAY AGAIN', () => this.scene.start('pick', { round: 0, items: [] }), 300);
   }
 }
 
