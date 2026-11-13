@@ -114,9 +114,22 @@ class Title extends Phaser.Scene {
     txt(this, W / 2, 470, 'Kill it, or get eaten.', 26, '#ff9a7a');
     const tap = txt(this, W / 2, 550, '▶  TAP TO START', 40, '#fff2c0');
     this.tweens.add({ targets: tap, alpha: 0.35, yoyo: true, repeat: -1, duration: 650 });
-    this.input.once('pointerdown', () => {
-      const ctx = this.sound.context; if (ctx && ctx.state === 'suspended') ctx.resume();
-      if (!this.sound.get('music')) { try { this.sound.add('music', { loop: true, volume: 0.35 }).play(); } catch (e) {} }
+    this.input.once('pointerup', () => {
+      const snd = this.sound;
+      const startMusic = () => {
+        let m = snd.get('music');
+        if (!m) { try { m = snd.add('music', { loop: true, volume: 0.35 }); } catch (e) { return; } }
+        if (!m.isPlaying) { try { m.play(); } catch (e) {} }
+      };
+      const ctx = snd.context;
+      if (ctx && ctx.state !== 'running') {
+        try { const b = ctx.createBuffer(1, 1, 22050), src = ctx.createBufferSource(); src.buffer = b; src.connect(ctx.destination); src.start(0); } catch (e) {}
+        const pr = ctx.resume && ctx.resume();
+        if (pr && pr.then) pr.then(startMusic, startMusic);
+      }
+      if (snd.locked) snd.once('unlocked', startMusic);
+      startMusic();
+      setTimeout(startMusic, 600);
       sfx(this, 'click');
       this.scene.start('pick', { round: 0, items: [] });
     });
