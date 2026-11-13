@@ -6,9 +6,10 @@ const LANG_NAME = { en: 'English', zh: '中文', ja: '日本語', ko: '한국어
 const I18N = {
 /*<en>*/
 en: {
+  bonusTitle: 'OVERKILL BONUS!', bonusTier: { minor: 'Trophy', chest: 'Bonus chest!', jackpot: 'JACKPOT CHEST!' },
   title: 'DRAGON CHEST', sub1: '3 bosses. 3 chests each. ONE strike per boss.', sub2: 'Your loot stacks up. Kill them, or get eaten.',
   tapStart: '▶  TAP TO START', tapCont: '▶  TAP TO CONTINUE',
-  stageChest: (s, n, k, m) => `STAGE ${s}/${n}  ·  CHEST ${k}/${m}`, pickNext: (b, hp) => `Pick one  ·  next: ${b}  HP ${hp}`,
+  stageRound: (s, n, k, m) => `STAGE ${s}/${n}  ·  ROUND ${k}/${m}`, round: (k, m) => `ROUND ${k}/${m}`, pickOne: 'PICK ONE!', missed: 'missed:', pickNext: (b, hp) => `Pick one  ·  next: ${b}  HP ${hp}`,
   chest: { wood: 'Wooden', gold: 'Gold', black: 'Black' }, el: { Fire: 'Fire', Ice: 'Ice', Thunder: 'Thunder' },
   bag: (n, m) => `BAG  ${n}/${m}`, rar: { COMMON: 'COMMON', RARE: 'RARE', EPIC: 'EPIC', LEGENDARY: 'LEGENDARY', CURSED: 'CURSED' },
   banLeg: 'LEGENDARY!!', banEpic: 'EPIC!', kind: { weapon: 'Weapon', armor: 'Armor', accessory: 'Accessory', cursed: 'Cursed item' },
@@ -33,9 +34,10 @@ en: {
 /*</en>*/
 /*<zh>*/
 zh: {
+  bonusTitle: '溢出奖励！', bonusTier: { minor: '战利品', chest: '奖励宝箱！', jackpot: '大奖宝箱！' },
   title: '屠龙宝箱', sub1: '3 个 Boss，每关 3 个宝箱，每个 Boss 只砍一刀。', sub2: '装备逐关累积。砍死它们，或者被吃掉。',
   tapStart: '▶  点击开始', tapCont: '▶  点击继续',
-  stageChest: (s, n, k, m) => `第 ${s}/${n} 关  ·  宝箱 ${k}/${m}`, pickNext: (b, hp) => `三选一  ·  下一个：${b}  HP ${hp}`,
+  stageRound: (s, n, k, m) => `第 ${s}/${n} 关  ·  第 ${k}/${m} 轮`, round: (k, m) => `第 ${k}/${m} 轮`, pickOne: '三选一！', missed: '错过了：', pickNext: (b, hp) => `三选一  ·  下一个：${b}  HP ${hp}`,
   chest: { wood: '木箱', gold: '金箱', black: '黑箱' }, el: { Fire: '火', Ice: '冰', Thunder: '雷' },
   bag: (n, m) => `背包  ${n}/${m}`, rar: { COMMON: '普通', RARE: '稀有', EPIC: '史诗', LEGENDARY: '传说', CURSED: '诅咒' },
   banLeg: '传说！！', banEpic: '史诗！', kind: { weapon: '武器', armor: '防具', accessory: '饰品', cursed: '诅咒物品' },
@@ -60,9 +62,10 @@ zh: {
 /*</zh>*/
 /*<ja>*/
 ja: {
+  bonusTitle: 'オーバーキルボーナス！', bonusTier: { minor: '戦利品', chest: 'ボーナス宝箱！', jackpot: '大当たり宝箱！' },
   title: 'ドラゴンチェスト', sub1: 'ボス3体。各ステージ宝箱3つ。攻撃は1回だけ。', sub2: '装備は引き継がれる。倒すか、喰われるか。',
   tapStart: '▶  タップしてスタート', tapCont: '▶  タップして続ける',
-  stageChest: (s, n, k, m) => `ステージ ${s}/${n}  ·  宝箱 ${k}/${m}`, pickNext: (b, hp) => `1つ選べ  ·  次：${b}  HP ${hp}`,
+  stageRound: (s, n, k, m) => `ステージ ${s}/${n}  ·  ラウンド ${k}/${m}`, round: (k, m) => `ラウンド ${k}/${m}`, pickOne: 'ひとつ選べ！', missed: '逃した中身：', pickNext: (b, hp) => `1つ選べ  ·  次：${b}  HP ${hp}`,
   chest: { wood: '木の箱', gold: '金の箱', black: '黒の箱' }, el: { Fire: '炎', Ice: '氷', Thunder: '雷' },
   bag: (n, m) => `バッグ  ${n}/${m}`, rar: { COMMON: 'コモン', RARE: 'レア', EPIC: 'エピック', LEGENDARY: 'レジェンド', CURSED: '呪い' },
   banLeg: 'レジェンド！！', banEpic: 'エピック！', kind: { weapon: '武器', armor: '防具', accessory: '装飾品', cursed: '呪いの品' },
@@ -87,9 +90,10 @@ ja: {
 /*</ja>*/
 /*<ko>*/
 ko: {
+  bonusTitle: '오버킬 보너스!', bonusTier: { minor: '전리품', chest: '보너스 상자!', jackpot: '잭팟 상자!' },
   title: '드래곤 체스트', sub1: '보스 3마리. 스테이지마다 상자 3개. 공격은 단 한 번.', sub2: '장비는 계속 쌓인다. 쓰러뜨리거나, 잡아먹히거나.',
   tapStart: '▶  탭하여 시작', tapCont: '▶  탭하여 계속',
-  stageChest: (s, n, k, m) => `스테이지 ${s}/${n}  ·  상자 ${k}/${m}`, pickNext: (b, hp) => `하나 선택  ·  다음: ${b}  HP ${hp}`,
+  stageRound: (s, n, k, m) => `스테이지 ${s}/${n}  ·  라운드 ${k}/${m}`, round: (k, m) => `라운드 ${k}/${m}`, pickOne: '하나를 골라라!', missed: '놓친 것:', pickNext: (b, hp) => `하나 선택  ·  다음: ${b}  HP ${hp}`,
   chest: { wood: '나무 상자', gold: '황금 상자', black: '검은 상자' }, el: { Fire: '화염', Ice: '얼음', Thunder: '번개' },
   bag: (n, m) => `가방  ${n}/${m}`, rar: { COMMON: '일반', RARE: '희귀', EPIC: '영웅', LEGENDARY: '전설', CURSED: '저주' },
   banLeg: '전설!!', banEpic: '영웅!', kind: { weapon: '무기', armor: '방어구', accessory: '장신구', cursed: '저주 아이템' },
@@ -114,9 +118,10 @@ ko: {
 /*</ko>*/
 /*<pt>*/
 pt: {
+  bonusTitle: 'BÔNUS DE OVERKILL!', bonusTier: { minor: 'Troféu', chest: 'Baú bônus!', jackpot: 'BAÚ JACKPOT!' },
   title: 'BAÚ DO DRAGÃO', sub1: '3 chefões. 3 baús cada. UM golpe por chefão.', sub2: 'O saque se acumula. Mate-os ou vire comida.',
   tapStart: '▶  TOQUE PARA COMEÇAR', tapCont: '▶  TOQUE PARA CONTINUAR',
-  stageChest: (s, n, k, m) => `FASE ${s}/${n}  ·  BAÚ ${k}/${m}`, pickNext: (b, hp) => `Escolha um  ·  próximo: ${b}  HP ${hp}`,
+  stageRound: (s, n, k, m) => `FASE ${s}/${n}  ·  RODADA ${k}/${m}`, round: (k, m) => `RODADA ${k}/${m}`, pickOne: 'ESCOLHA UM!', missed: 'você perdeu:', pickNext: (b, hp) => `Escolha um  ·  próximo: ${b}  HP ${hp}`,
   chest: { wood: 'Madeira', gold: 'Dourado', black: 'Sombrio' }, el: { Fire: 'Fogo', Ice: 'Gelo', Thunder: 'Trovão' },
   bag: (n, m) => `BOLSA  ${n}/${m}`, rar: { COMMON: 'COMUM', RARE: 'RARO', EPIC: 'ÉPICO', LEGENDARY: 'LENDÁRIO', CURSED: 'MALDITO' },
   banLeg: 'LENDÁRIO!!', banEpic: 'ÉPICO!', kind: { weapon: 'Arma', armor: 'Armadura', accessory: 'Acessório', cursed: 'Item maldito' },
@@ -142,9 +147,10 @@ pt: {
 /*</pt>*/
 /*<es>*/
 es: {
+  bonusTitle: '¡BONO DE OVERKILL!', bonusTier: { minor: 'Trofeo', chest: '¡Cofre extra!', jackpot: '¡COFRE PREMIO GORDO!' },
   title: 'COFRE DEL DRAGÓN', sub1: '3 jefes. 3 cofres cada uno. UN golpe por jefe.', sub2: 'El botín se acumula. Mátalos o te devoran.',
   tapStart: '▶  TOCA PARA EMPEZAR', tapCont: '▶  TOCA PARA CONTINUAR',
-  stageChest: (s, n, k, m) => `FASE ${s}/${n}  ·  COFRE ${k}/${m}`, pickNext: (b, hp) => `Elige uno  ·  siguiente: ${b}  HP ${hp}`,
+  stageRound: (s, n, k, m) => `FASE ${s}/${n}  ·  RONDA ${k}/${m}`, round: (k, m) => `RONDA ${k}/${m}`, pickOne: '¡ELIGE UNO!', missed: 'te perdiste:', pickNext: (b, hp) => `Elige uno  ·  siguiente: ${b}  HP ${hp}`,
   chest: { wood: 'Madera', gold: 'Dorado', black: 'Sombrío' }, el: { Fire: 'Fuego', Ice: 'Hielo', Thunder: 'Trueno' },
   bag: (n, m) => `BOLSA  ${n}/${m}`, rar: { COMMON: 'COMÚN', RARE: 'RARO', EPIC: 'ÉPICO', LEGENDARY: 'LEGENDARIO', CURSED: 'MALDITO' },
   banLeg: '¡¡LEGENDARIO!!', banEpic: '¡ÉPICO!', kind: { weapon: 'Arma', armor: 'Armadura', accessory: 'Accesorio', cursed: 'Objeto maldito' },
