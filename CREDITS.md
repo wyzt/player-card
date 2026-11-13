@@ -10,7 +10,7 @@
 | `assets/img/bosses/skull.png` (Fire-Skull), `reaper.png` (Ghost idle), `nightmare.png` (Nightmare idle), `demon.png` (demon idle) - endless-mode bosses, cropped | https://opengameart.org/content/gothicvania-patreons-collection | ansimuz | CC0 |
 | `assets/img/bosses/wyrm.png` ("Avaras Dragon Big", flipped, halved, 4-frame breathing loop generated from the single image) | https://opengameart.org/content/12-public-domain-boss-sprites | titleknown | CC0 |
 | `assets/img/hero_idle.png`, `hero_run.png`, `hero_attack.png` ("Hero Swordsman", 64x64 frames, re-packed into strips) | https://opengameart.org/content/hero-swordsman | tbbk | CC0 |
-| `assets/img/icons.png` (31 item icons), `chest_*.png` / `open_*.png` (I_Chest01/02, recoloured for wood/gold/black) | https://opengameart.org/content/496-pixel-art-icons-for-medievalfantasy-rpg | 7Soul1 (Henrique Lazarini) | CC0 |
+| `assets/img/icons.png` (31 item icons), `chest_*.png` / `open_*.png` (I_Chest01/02, recoloured into Fire / Ice / Thunder element chests and the black DARK chest) | https://opengameart.org/content/496-pixel-art-icons-for-medievalfantasy-rpg | 7Soul1 (Henrique Lazarini) | CC0 |
 
 ## Font
 - Pixelify Sans (`assets/fonts/PixelifySans.ttf`), Copyright 2021 The Pixelify Sans Project Authors (https://github.com/eifetx/Pixelify-Sans), SIL Open Font License 1.1 - full licence text in `assets/fonts/OFL.txt`. Downloaded from https://github.com/google/fonts/tree/main/ofl/pixelifysans

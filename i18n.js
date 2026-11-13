@@ -387,6 +387,268 @@ es: {
 /*</es>*/
 };
 for (const l of LANGS) Object.assign(I18N[l], I18N6[l]);
+
+// v6: gear stacks forever, every weapon hits on its own, cursed items + purify gems
+const I18N7 = {
+/*<en>*/
+en: {
+  gear0: 'All gear stacks forever. Every weapon strikes on its own.', sub2: 'Your gear stacks forever. Kill them, or get eaten.',
+  blackHint: 'GAMBLE: big loot or a CURSED item',
+  ruleW: (lo, hi, c) => `${lo}–${hi} ATK · crit ${c}%`, ruleAcc: (p) => `+${p}% all damage`,
+  arm: { critX: (v) => `+${v}× crit damage`, elemB: (v, el) => `+${v}% ${el} weapon damage`, burnT: (v) => `+${v} burn tick${v > 1 ? 's' : ''}`, vuln: (v) => `+${v}% frostbite (damage taken)`, chains: (v) => `+${v} chain bolt${v > 1 ? 's' : ''}` },
+  noCrit: 'Never crits: boosts your weapon hits', wNote: 'Hits on its own every strike',
+  cur: { drain: (lo, hi) => `Drains ${lo}–${hi} from your total`, critDown: (v) => `Crit damage −${v}×`, seal: (el) => `Your ${el} items do nothing`, weak: (p) => `All damage −${p}%`, hpUp: (p) => `Boss HP +${p}%` },
+  curseNote: 'Stays in your gear until a PURIFY GEM removes it',
+  gemT: 'PURIFY GEM', gemDesc: 'Wooden & gold chests sometimes drop one. It auto-removes your worst cursed item; with no curse it is held for later.', gemHeld: (n) => `${n} held`,
+  evAdd: (n) => `+1 GEAR (${n})`, evCursed: 'CURSED ITEM!', evPurify: 'PURIFIED!', evGem: '+1 PURIFY GEM',
+  gearCount: (w, a, c) => `${w} weapons · ${a} armour · ${c} accessories`, cursedN: (n) => `${n} cursed`, newTag: 'NEW',
+  synDesc: { Fire: 'Burn: after the hits the boss keeps burning (steady)', Ice: 'Frostbite: boss takes more from every hit, all weapons crit more', Thunder: 'Chain: every hit may fork into extra bolts (swingy)' },
+  synFx: { Fire: (p, k) => `burns ${p}% of the hits × ${k} ticks`, Ice: (p, c) => `+${p}% damage taken · +${c}% crit chance`, Thunder: (c, n) => `${c}% per hit: ${n} chain bolts` },
+  hits: (n) => `×${n} HITS`, critHit: 'CRIT!', chainHit: (n) => `CHAIN ×${n}`,
+  strikeSum: (n, c, ch) => `×${n} hits · ${c} crit · ${ch} chain`,
+},
+/*</en>*/
+/*<zh>*/
+zh: {
+  gear0: '所有装备永久叠加，每把武器单独出手。', sub2: '装备永久叠加。杀了它们，或者被吃掉。',
+  blackHint: '赌博：大奖或诅咒装备',
+  ruleW: (lo, hi, c) => `攻击 ${lo}–${hi} · 暴击 ${c}%`, ruleAcc: (p) => `全部伤害 +${p}%`,
+  arm: { critX: (v) => `暴击伤害 +${v}倍`, elemB: (v, el) => `${el}武器伤害 +${v}%`, burnT: (v) => `灼烧 +${v} 跳`, vuln: (v) => `冻伤承伤 +${v}%`, chains: (v) => `连锁 +${v} 道闪电` },
+  noCrit: '不会暴击：强化你的武器命中', wNote: '每次出击单独命中一次',
+  cur: { drain: (lo, hi) => `从总伤害中扣除 ${lo}–${hi}`, critDown: (v) => `暴击伤害 −${v}倍`, seal: (el) => `你的${el}装备完全无效`, weak: (p) => `全部伤害 −${p}%`, hpUp: (p) => `Boss 生命 +${p}%` },
+  curseNote: '一直留在装备里，直到净化宝石将其移除',
+  gemT: '净化宝石', gemDesc: '木箱和金箱有时会掉落。自动移除你最糟的诅咒装备；没有诅咒时先保存起来。', gemHeld: (n) => `持有 ${n}`,
+  evAdd: (n) => `+1 装备（${n}）`, evCursed: '诅咒装备！', evPurify: '净化！', evGem: '+1 净化宝石',
+  gearCount: (w, a, c) => `武器 ${w} · 防具 ${a} · 饰品 ${c}`, cursedN: (n) => `诅咒 ${n}`, newTag: '新',
+  synDesc: { Fire: '灼烧：命中后 Boss 持续燃烧（稳定）', Ice: '冻伤：Boss 每次受击伤害提高，所有武器暴击率提高', Thunder: '连锁：每次命中都可能分叉出额外闪电（波动大）' },
+  synFx: { Fire: (p, k) => `灼烧命中伤害的 ${p}% × ${k} 跳`, Ice: (p, c) => `承伤 +${p}% · 暴击率 +${c}%`, Thunder: (c, n) => `每次命中 ${c}%：${n} 道连锁闪电` },
+  hits: (n) => `×${n} 连击`, critHit: '暴击！', chainHit: (n) => `连锁 ×${n}`,
+  strikeSum: (n, c, ch) => `${n} 次命中 · ${c} 暴击 · ${ch} 连锁`,
+},
+/*</zh>*/
+/*<ja>*/
+ja: {
+  gear0: '装備はずっと積み重なる。武器は1本ずつ攻撃する。', sub2: '装備はずっと積み重なる。倒すか、食われるか。',
+  blackHint: 'ギャンブル：大当たりか呪いの装備',
+  ruleW: (lo, hi, c) => `攻撃 ${lo}–${hi} · 会心 ${c}%`, ruleAcc: (p) => `全ダメージ +${p}%`,
+  arm: { critX: (v) => `会心ダメージ +${v}倍`, elemB: (v, el) => `${el}武器ダメージ +${v}%`, burnT: (v) => `燃焼 +${v} 回`, vuln: (v) => `凍傷 被ダメ +${v}%`, chains: (v) => `連鎖の稲妻 +${v}` },
+  noCrit: '会心なし：武器の一撃を強化する', wNote: '毎回の攻撃で単独ヒット',
+  cur: { drain: (lo, hi) => `合計から ${lo}–${hi} を奪う`, critDown: (v) => `会心ダメージ −${v}倍`, seal: (el) => `${el}の装備が無効になる`, weak: (p) => `全ダメージ −${p}%`, hpUp: (p) => `ボスHP +${p}%` },
+  curseNote: '浄化の宝石で消えるまで装備に残る',
+  gemT: '浄化の宝石', gemDesc: '木箱と金箱からときどき出る。最悪の呪い装備を自動で消す。呪いがなければ保管される。', gemHeld: (n) => `所持 ${n}`,
+  evAdd: (n) => `+1 装備（${n}）`, evCursed: '呪いの装備！', evPurify: '浄化！', evGem: '+1 浄化の宝石',
+  gearCount: (w, a, c) => `武器 ${w} · 防具 ${a} · 装飾品 ${c}`, cursedN: (n) => `呪い ${n}`, newTag: 'NEW',
+  synDesc: { Fire: '燃焼：攻撃の後もボスが燃え続ける（安定）', Ice: '凍傷：ボスの被ダメージ増加、全武器の会心率アップ', Thunder: '連鎖：各ヒットが追加の稲妻に分かれることがある（ムラあり）' },
+  synFx: { Fire: (p, k) => `ヒットの ${p}% を ${k} 回燃焼`, Ice: (p, c) => `被ダメ +${p}% · 会心率 +${c}%`, Thunder: (c, n) => `ヒットごと ${c}%：稲妻 ${n} 本` },
+  hits: (n) => `×${n} HIT`, critHit: '会心！', chainHit: (n) => `連鎖 ×${n}`,
+  strikeSum: (n, c, ch) => `${n} ヒット · 会心 ${c} · 連鎖 ${ch}`,
+},
+/*</ja>*/
+/*<ko>*/
+ko: {
+  gear0: '모든 장비는 영원히 쌓인다. 무기마다 따로 공격한다.', sub2: '장비는 영원히 쌓인다. 쓰러뜨리거나, 먹히거나.',
+  blackHint: '도박: 대박 또는 저주 장비',
+  ruleW: (lo, hi, c) => `공격력 ${lo}–${hi} · 치명 ${c}%`, ruleAcc: (p) => `모든 피해 +${p}%`,
+  arm: { critX: (v) => `치명타 피해 +${v}배`, elemB: (v, el) => `${el} 무기 피해 +${v}%`, burnT: (v) => `화상 +${v}회`, vuln: (v) => `동상 받는 피해 +${v}%`, chains: (v) => `연쇄 번개 +${v}` },
+  noCrit: '치명타 없음: 무기 타격을 강화', wNote: '공격마다 따로 한 번 타격',
+  cur: { drain: (lo, hi) => `총 피해에서 ${lo}–${hi} 차감`, critDown: (v) => `치명타 피해 −${v}배`, seal: (el) => `${el} 장비가 아무 효과 없음`, weak: (p) => `모든 피해 −${p}%`, hpUp: (p) => `보스 HP +${p}%` },
+  curseNote: '정화의 보석이 없앨 때까지 장비에 남는다',
+  gemT: '정화의 보석', gemDesc: '나무·황금 상자에서 가끔 나온다. 가장 나쁜 저주 장비를 자동으로 없앤다. 저주가 없으면 보관된다.', gemHeld: (n) => `보유 ${n}`,
+  evAdd: (n) => `+1 장비 (${n})`, evCursed: '저주 장비!', evPurify: '정화!', evGem: '+1 정화의 보석',
+  gearCount: (w, a, c) => `무기 ${w} · 방어구 ${a} · 장신구 ${c}`, cursedN: (n) => `저주 ${n}`, newTag: 'NEW',
+  synDesc: { Fire: '화상: 타격 후에도 보스가 계속 불탄다 (안정적)', Ice: '동상: 보스가 받는 피해 증가, 모든 무기 치명타 확률 증가', Thunder: '연쇄: 타격마다 추가 번개로 갈라질 수 있다 (변동 큼)' },
+  synFx: { Fire: (p, k) => `타격의 ${p}% × ${k}회 화상`, Ice: (p, c) => `받는 피해 +${p}% · 치명 +${c}%`, Thunder: (c, n) => `타격마다 ${c}%: 번개 ${n}개` },
+  hits: (n) => `×${n} HIT`, critHit: '치명타!', chainHit: (n) => `연쇄 ×${n}`,
+  strikeSum: (n, c, ch) => `${n}타 · 치명 ${c} · 연쇄 ${ch}`,
+},
+/*</ko>*/
+/*<pt>*/
+pt: {
+  gear0: 'Todo o equipamento acumula para sempre. Cada arma ataca sozinha.', sub2: 'Seu equipamento acumula para sempre. Mate-os ou seja devorado.',
+  blackHint: 'APOSTA: saque enorme ou item AMALDIÇOADO',
+  ruleW: (lo, hi, c) => `${lo}–${hi} ATQ · crít ${c}%`, ruleAcc: (p) => `+${p}% todo o dano`,
+  arm: { critX: (v) => `+${v}× dano crítico`, elemB: (v, el) => `+${v}% dano de armas de ${el}`, burnT: (v) => `+${v} tique${v > 1 ? 's' : ''} de queimadura`, vuln: (v) => `+${v}% congelamento (dano recebido)`, chains: (v) => `+${v} raio${v > 1 ? 's' : ''} em cadeia` },
+  noCrit: 'Nunca crita: fortalece os golpes das armas', wNote: 'Golpeia sozinha a cada ataque',
+  cur: { drain: (lo, hi) => `Drena ${lo}–${hi} do seu total`, critDown: (v) => `Dano crítico −${v}×`, seal: (el) => `Seus itens de ${el} não fazem nada`, weak: (p) => `Todo o dano −${p}%`, hpUp: (p) => `HP do chefe +${p}%` },
+  curseNote: 'Fica no equipamento até uma GEMA DE PURIFICAÇÃO removê-lo',
+  gemT: 'GEMA DE PURIFICAÇÃO', gemDesc: 'Baús de madeira e ouro às vezes soltam uma. Remove sozinha seu pior item amaldiçoado; sem maldição, fica guardada.', gemHeld: (n) => `${n} guardada${n > 1 ? 's' : ''}`,
+  evAdd: (n) => `+1 ITEM (${n})`, evCursed: 'ITEM AMALDIÇOADO!', evPurify: 'PURIFICADO!', evGem: '+1 GEMA DE PURIFICAÇÃO',
+  gearCount: (w, a, c) => `${w} armas · ${a} armaduras · ${c} acessórios`, cursedN: (n) => `${n} maldito${n > 1 ? 's' : ''}`, newTag: 'NOVO',
+  synDesc: { Fire: 'Queimadura: depois dos golpes o chefe continua queimando (estável)', Ice: 'Congelamento: o chefe recebe mais de cada golpe, todas as armas critam mais', Thunder: 'Cadeia: cada golpe pode se dividir em raios extras (instável)' },
+  synFx: { Fire: (p, k) => `queima ${p}% dos golpes × ${k} tiques`, Ice: (p, c) => `+${p}% dano recebido · +${c}% chance de crítico`, Thunder: (c, n) => `${c}% por golpe: ${n} raios em cadeia` },
+  hits: (n) => `×${n} GOLPES`, critHit: 'CRÍTICO!', chainHit: (n) => `CADEIA ×${n}`,
+  strikeSum: (n, c, ch) => `×${n} golpes · ${c} crít · ${ch} cadeia`,
+},
+/*</pt>*/
+/*<es>*/
+es: {
+  gear0: 'Todo el equipo se acumula para siempre. Cada arma golpea por su cuenta.', sub2: 'Tu equipo se acumula para siempre. Mátalos o te devoran.',
+  blackHint: 'APUESTA: botín enorme u objeto MALDITO',
+  ruleW: (lo, hi, c) => `${lo}–${hi} ATQ · crít ${c}%`, ruleAcc: (p) => `+${p}% todo el daño`,
+  arm: { critX: (v) => `+${v}× daño crítico`, elemB: (v, el) => `+${v}% daño de armas de ${el}`, burnT: (v) => `+${v} tic${v > 1 ? 's' : ''} de quemadura`, vuln: (v) => `+${v}% congelación (daño recibido)`, chains: (v) => `+${v} rayo${v > 1 ? 's' : ''} en cadena` },
+  noCrit: 'Nunca hace crítico: potencia los golpes de tus armas', wNote: 'Golpea por su cuenta en cada ataque',
+  cur: { drain: (lo, hi) => `Resta ${lo}–${hi} de tu total`, critDown: (v) => `Daño crítico −${v}×`, seal: (el) => `Tus objetos de ${el} no hacen nada`, weak: (p) => `Todo el daño −${p}%`, hpUp: (p) => `PV del jefe +${p}%` },
+  curseNote: 'Se queda en tu equipo hasta que una GEMA PURIFICADORA lo quite',
+  gemT: 'GEMA PURIFICADORA', gemDesc: 'Los cofres de madera y oro a veces sueltan una. Quita sola tu peor objeto maldito; si no hay maldición, se guarda.', gemHeld: (n) => `${n} guardada${n > 1 ? 's' : ''}`,
+  evAdd: (n) => `+1 OBJETO (${n})`, evCursed: '¡OBJETO MALDITO!', evPurify: '¡PURIFICADO!', evGem: '+1 GEMA PURIFICADORA',
+  gearCount: (w, a, c) => `${w} armas · ${a} armaduras · ${c} accesorios`, cursedN: (n) => `${n} maldito${n > 1 ? 's' : ''}`, newTag: 'NUEVO',
+  synDesc: { Fire: 'Quemadura: tras los golpes el jefe sigue ardiendo (estable)', Ice: 'Congelación: el jefe recibe más de cada golpe, todas las armas hacen más críticos', Thunder: 'Cadena: cada golpe puede dividirse en rayos extra (variable)' },
+  synFx: { Fire: (p, k) => `quema ${p}% de los golpes × ${k} tics`, Ice: (p, c) => `+${p}% daño recibido · +${c}% prob. de crítico`, Thunder: (c, n) => `${c}% por golpe: ${n} rayos en cadena` },
+  hits: (n) => `×${n} GOLPES`, critHit: '¡CRÍTICO!', chainHit: (n) => `CADENA ×${n}`,
+  strikeSum: (n, c, ch) => `×${n} golpes · ${c} crít · ${ch} cadena`,
+},
+/*</es>*/
+};
+for (const l of LANGS) Object.assign(I18N[l], I18N7[l]);
+
+// v7: element chests + DARK chest, 6 rarities, gear effects, thresholds 3/6/9, dual combos, boss weakness, execute
+const I18N8 = {
+/*<en>*/
+en: {
+  statLine: (ex, ec, gr, pm) => `Execute ${ex}% · Echo ${ec}% · Greed ${gr}% · Perm +${pm}%`, comboOn: 'ACTIVE', 
+  chestEl: (el) => `${el} chest`, darkChest: 'DARK CHEST', darkHint: 'Better loot… or a CURSED item', blackHint: 'Better loot… or a CURSED item',
+  rar: { COMMON: 'COMMON', UNCOMMON: 'UNCOMMON', RARE: 'RARE', EPIC: 'EPIC', LEGENDARY: 'LEGENDARY', MYTHIC: 'MYTHIC', CURSED: 'CURSED' },
+  eff: { elemB: (v, el) => `+${v}% ${el} weapon damage`, critX: (v) => `+${v}× crit damage`, combo: (v) => `+${v}% damage per hit in the strike`, execute: (v) => `Execute line +${v}% boss HP`,
+    glob: (v) => `+${v}% all damage`, echo: (v) => `${v}% chance a weapon hits twice`, greed: (v) => `${v}% chance: next chest +1 rarity`, okConv: (v) => `${v}% of overkill → permanent damage` },
+  effNote: { combo: 'Counts every hit of the strike (order does not matter)', execute: 'After all hits: boss below the line dies instantly (max 20%)', okConv: 'Each kill grows your permanent bonus', greed: 'Rolled when you open a chest' },
+  synLv: (n, lv, nx) => `${n} items · Lv${lv}` + (nx ? ` (Lv${lv + 1} at ${nx})` : ' (MAX)'),
+  synDesc: { Fire: 'Burn: your Fire hits keep burning after the strike', Ice: 'Frostbite: every hit is amplified, Ice weapons crit more', Thunder: 'Chain: each Thunder hit may fork into bolts (swingy)' },
+  synFx: { Fire: (p, k) => `Fire hits burn ${p}% × ${k} ticks`, Ice: (p, c) => `all hits +${p}% · Ice crit +${c}%`, Thunder: (c, n) => `Thunder hits: ${c}% → ${n} bolts` },
+  lv3: { Fire: 'INFERNO: +1 burn tick per 3 more Fire items', Ice: 'SHATTER: +1× crit damage for everything', Thunder: 'STORM: chain bolts can crit' },
+  combosT: 'COMBOS', comboN: { melt: 'MELT', superconduct: 'SUPERCONDUCT', overload: 'OVERLOAD' },
+  comboD: { melt: 'Fire + Ice Lv1: burn ×3', superconduct: 'Ice + Thunder Lv1: crit damage ×2', overload: 'Fire + Thunder Lv1: an explosion of +35% of all hits' },
+  comboOff: 'needs two elements at Lv1 (3 items each)',
+  weakT: 'WEAK', resistT: 'RESISTS', nextBoss: 'NEXT', infWeakTag: (x) => `WEAKNESS ×${x}`, infResTag: (x) => `RESISTED ×${x}`,
+  infNote: 'Your strike takes the element of the chest you open', infPop: (el, x) => `${el} ×${x}!`,
+  execPop: 'EXECUTE!', execLine: (p) => `Execute line ${p}%`, echoTag: 'ECHO', overloadPop: (v) => `OVERLOAD +${v}`, meltPop: 'MELT ×3!', scPop: 'SUPERCONDUCT!',
+  permPop: (p) => `+${p}% PERMANENT`, permLine: (p) => `Permanent overkill bonus +${p}% damage`, greedPop: 'GREED: +1 RARITY!',
+  gemDesc: 'Normal chests sometimes drop one. It auto-removes your worst cursed item; with no curse it is held for later.',
+  hitsCombo: (n, c) => `×${n} HITS · COMBO ×${c}`,
+  sub1: 'Endless bosses. Pick one elemental chest, strike once.',
+},
+/*</en>*/
+/*<zh>*/
+zh: {
+  statLine: (ex, ec, gr, pm) => `斩杀 ${ex}% · 回响 ${ec}% · 贪婪 ${gr}% · 永久 +${pm}%`, comboOn: '已激活', 
+  chestEl: (el) => `${el}宝箱`, darkChest: '暗黑宝箱', darkHint: '更好的战利品……或诅咒装备', blackHint: '更好的战利品……或诅咒装备',
+  rar: { COMMON: '普通', UNCOMMON: '优秀', RARE: '稀有', EPIC: '史诗', LEGENDARY: '传说', MYTHIC: '神话', CURSED: '诅咒' },
+  eff: { elemB: (v, el) => `${el}武器伤害 +${v}%`, critX: (v) => `暴击伤害 +${v}倍`, combo: (v) => `本次出击每次命中 +${v}% 伤害`, execute: (v) => `斩杀线 +${v}% Boss 生命`,
+    glob: (v) => `全部伤害 +${v}%`, echo: (v) => `${v}% 几率武器命中两次`, greed: (v) => `${v}% 几率：下个宝箱稀有度 +1`, okConv: (v) => `${v}% 溢出伤害 → 永久伤害` },
+  effNote: { combo: '计算本次出击的全部命中（与顺序无关）', execute: '全部命中后：Boss 低于斩杀线立即死亡（最高 20%）', okConv: '每次击杀都会提高永久加成', greed: '开宝箱时判定' },
+  synLv: (n, lv, nx) => `${n} 件 · ${lv} 级` + (nx ? `（${nx} 件升 ${lv + 1} 级）` : '（满级）'),
+  synDesc: { Fire: '灼烧：火焰命中在出击后持续燃烧', Ice: '冻伤：所有命中被放大，冰霜武器暴击更多', Thunder: '连锁：每次雷电命中可能分叉出闪电（波动大）' },
+  synFx: { Fire: (p, k) => `火焰命中灼烧 ${p}% × ${k} 跳`, Ice: (p, c) => `所有命中 +${p}% · 冰霜暴击 +${c}%`, Thunder: (c, n) => `雷电命中：${c}% → ${n} 道闪电` },
+  lv3: { Fire: '炼狱：每多 3 件火焰装备 +1 跳灼烧', Ice: '碎冰：所有暴击伤害 +1 倍', Thunder: '风暴：连锁闪电也能暴击' },
+  combosT: '元素反应', comboN: { melt: '融化', superconduct: '超导', overload: '超载' },
+  comboD: { melt: '火 + 冰 1 级：灼烧 ×3', superconduct: '冰 + 雷 1 级：暴击伤害 ×2', overload: '火 + 雷 1 级：爆炸，追加全部命中的 35%' },
+  comboOff: '需要两种元素都到 1 级（各 3 件）',
+  weakT: '弱点', resistT: '抗性', nextBoss: '下一个', infWeakTag: (x) => `弱点 ×${x}`, infResTag: (x) => `被抵抗 ×${x}`,
+  infNote: '你的出击会带上所开宝箱的元素', infPop: (el, x) => `${el} ×${x}！`,
+  execPop: '斩杀！', execLine: (p) => `斩杀线 ${p}%`, echoTag: '回响', overloadPop: (v) => `超载 +${v}`, meltPop: '融化 ×3！', scPop: '超导！',
+  permPop: (p) => `永久 +${p}%`, permLine: (p) => `永久溢出加成：伤害 +${p}%`, greedPop: '贪婪：稀有度 +1！',
+  gemDesc: '普通宝箱有时会掉落。自动移除你最糟的诅咒装备；没有诅咒时先保存起来。',
+  hitsCombo: (n, c) => `×${n} 连击 · 连段 ×${c}`,
+  sub1: '无尽的 Boss。选一个元素宝箱，只砍一刀。',
+},
+/*</zh>*/
+/*<ja>*/
+ja: {
+  statLine: (ex, ec, gr, pm) => `処刑 ${ex}% · 残響 ${ec}% · 強欲 ${gr}% · 永続 +${pm}%`, comboOn: '発動中', 
+  chestEl: (el) => `${el}の宝箱`, darkChest: '闇の宝箱', darkHint: 'より良い戦利品…または呪いの装備', blackHint: 'より良い戦利品…または呪いの装備',
+  rar: { COMMON: 'コモン', UNCOMMON: 'アンコモン', RARE: 'レア', EPIC: 'エピック', LEGENDARY: 'レジェンド', MYTHIC: 'ミシック', CURSED: '呪い' },
+  eff: { elemB: (v, el) => `${el}武器ダメージ +${v}%`, critX: (v) => `会心ダメージ +${v}倍`, combo: (v) => `この攻撃のヒットごとに +${v}%`, execute: (v) => `処刑ライン +${v}%（ボスHP）`,
+    glob: (v) => `全ダメージ +${v}%`, echo: (v) => `${v}% の確率で武器が2回ヒット`, greed: (v) => `${v}%：次の宝箱のレア度 +1`, okConv: (v) => `オーバーキルの ${v}% → 永続ダメージ` },
+  effNote: { combo: '攻撃の全ヒット数で決まる（順番は関係なし）', execute: '全ヒット後、ボスHPがライン以下なら即死（最大20%）', okConv: '倒すたびに永続ボーナスが育つ', greed: '宝箱を開けた時に判定' },
+  synLv: (n, lv, nx) => `${n} 個 · Lv${lv}` + (nx ? `（${nx} 個で Lv${lv + 1}）` : '（MAX）'),
+  synDesc: { Fire: '燃焼：火のヒットが攻撃後も燃え続ける', Ice: '凍傷：全ヒットを増幅、氷の武器は会心しやすい', Thunder: '連鎖：雷のヒットが稲妻に分かれることがある（ムラあり）' },
+  synFx: { Fire: (p, k) => `火のヒットの ${p}% を ${k} 回燃焼`, Ice: (p, c) => `全ヒット +${p}% · 氷の会心 +${c}%`, Thunder: (c, n) => `雷のヒット：${c}% で稲妻 ${n} 本` },
+  lv3: { Fire: '業火：火の装備 3 個ごとに燃焼 +1 回', Ice: '粉砕：全ての会心ダメージ +1倍', Thunder: '嵐：連鎖の稲妻も会心する' },
+  combosT: '元素反応', comboN: { melt: '溶解', superconduct: '超電導', overload: '過負荷' },
+  comboD: { melt: '火 + 氷 Lv1：燃焼 ×3', superconduct: '氷 + 雷 Lv1：会心ダメージ ×2', overload: '火 + 雷 Lv1：全ヒットの35%の爆発' },
+  comboOff: '2つの元素を Lv1 に（各3個）',
+  weakT: '弱点', resistT: '耐性', nextBoss: '次', infWeakTag: (x) => `弱点 ×${x}`, infResTag: (x) => `耐性 ×${x}`,
+  infNote: '開けた宝箱の元素が攻撃に宿る', infPop: (el, x) => `${el} ×${x}！`,
+  execPop: '処刑！', execLine: (p) => `処刑ライン ${p}%`, echoTag: '残響', overloadPop: (v) => `過負荷 +${v}`, meltPop: '溶解 ×3！', scPop: '超電導！',
+  permPop: (p) => `永続 +${p}%`, permLine: (p) => `永続オーバーキル ボーナス +${p}%`, greedPop: '強欲：レア度 +1！',
+  gemDesc: '通常の宝箱からときどき出る。最悪の呪い装備を自動で消す。呪いがなければ保管される。',
+  hitsCombo: (n, c) => `×${n} HIT · コンボ ×${c}`,
+  sub1: '終わらないボス。元素の宝箱を1つ選び、一撃で決めろ。',
+},
+/*</ja>*/
+/*<ko>*/
+ko: {
+  statLine: (ex, ec, gr, pm) => `처형 ${ex}% · 메아리 ${ec}% · 탐욕 ${gr}% · 영구 +${pm}%`, comboOn: '활성', 
+  chestEl: (el) => `${el} 상자`, darkChest: '어둠의 상자', darkHint: '더 좋은 전리품… 또는 저주 장비', blackHint: '더 좋은 전리품… 또는 저주 장비',
+  rar: { COMMON: '일반', UNCOMMON: '고급', RARE: '희귀', EPIC: '영웅', LEGENDARY: '전설', MYTHIC: '신화', CURSED: '저주' },
+  eff: { elemB: (v, el) => `${el} 무기 피해 +${v}%`, critX: (v) => `치명타 피해 +${v}배`, combo: (v) => `이번 공격의 타격마다 +${v}%`, execute: (v) => `처형선 +${v}% (보스 HP)`,
+    glob: (v) => `모든 피해 +${v}%`, echo: (v) => `${v}% 확률로 무기가 두 번 타격`, greed: (v) => `${v}%: 다음 상자 등급 +1`, okConv: (v) => `초과 피해의 ${v}% → 영구 피해` },
+  effNote: { combo: '공격의 모든 타격 수로 계산 (순서 무관)', execute: '모든 타격 후 보스 HP가 선 아래면 즉사 (최대 20%)', okConv: '처치할 때마다 영구 보너스가 자란다', greed: '상자를 열 때 판정' },
+  synLv: (n, lv, nx) => `${n}개 · Lv${lv}` + (nx ? ` (${nx}개에 Lv${lv + 1})` : ' (MAX)'),
+  synDesc: { Fire: '화상: 불 타격이 공격 후에도 계속 불탄다', Ice: '동상: 모든 타격 증폭, 얼음 무기 치명타 증가', Thunder: '연쇄: 번개 타격이 번개로 갈라질 수 있다 (변동 큼)' },
+  synFx: { Fire: (p, k) => `불 타격의 ${p}% × ${k}회 화상`, Ice: (p, c) => `모든 타격 +${p}% · 얼음 치명 +${c}%`, Thunder: (c, n) => `번개 타격: ${c}% → 번개 ${n}개` },
+  lv3: { Fire: '연옥: 불 장비 3개마다 화상 +1회', Ice: '산산조각: 모든 치명타 피해 +1배', Thunder: '폭풍: 연쇄 번개도 치명타' },
+  combosT: '원소 반응', comboN: { melt: '융해', superconduct: '초전도', overload: '과부하' },
+  comboD: { melt: '불 + 얼음 Lv1: 화상 ×3', superconduct: '얼음 + 번개 Lv1: 치명타 피해 ×2', overload: '불 + 번개 Lv1: 모든 타격의 35% 폭발' },
+  comboOff: '두 원소를 Lv1로 (각 3개)',
+  weakT: '약점', resistT: '저항', nextBoss: '다음', infWeakTag: (x) => `약점 ×${x}`, infResTag: (x) => `저항됨 ×${x}`,
+  infNote: '연 상자의 원소가 공격에 깃든다', infPop: (el, x) => `${el} ×${x}!`,
+  execPop: '처형!', execLine: (p) => `처형선 ${p}%`, echoTag: '메아리', overloadPop: (v) => `과부하 +${v}`, meltPop: '융해 ×3!', scPop: '초전도!',
+  permPop: (p) => `영구 +${p}%`, permLine: (p) => `영구 초과 피해 보너스 +${p}%`, greedPop: '탐욕: 등급 +1!',
+  gemDesc: '일반 상자에서 가끔 나온다. 가장 나쁜 저주 장비를 자동으로 없앤다. 저주가 없으면 보관된다.',
+  hitsCombo: (n, c) => `×${n} HIT · 콤보 ×${c}`,
+  sub1: '끝없는 보스. 원소 상자 하나를 고르고, 한 번에 베어라.',
+},
+/*</ko>*/
+/*<pt>*/
+pt: {
+  statLine: (ex, ec, gr, pm) => `Execução ${ex}% · Eco ${ec}% · Ganância ${gr}% · Perm. +${pm}%`, comboOn: 'ATIVO', 
+  chestEl: (el) => `Baú de ${el}`, darkChest: 'BAÚ SOMBRIO', darkHint: 'Saque melhor… ou um item AMALDIÇOADO', blackHint: 'Saque melhor… ou um item AMALDIÇOADO',
+  rar: { COMMON: 'COMUM', UNCOMMON: 'INCOMUM', RARE: 'RARO', EPIC: 'ÉPICO', LEGENDARY: 'LENDÁRIO', MYTHIC: 'MÍTICO', CURSED: 'AMALDIÇOADO' },
+  eff: { elemB: (v, el) => `+${v}% dano de armas de ${el}`, critX: (v) => `+${v}× dano crítico`, combo: (v) => `+${v}% de dano por golpe no ataque`, execute: (v) => `Linha de execução +${v}% do HP`,
+    glob: (v) => `+${v}% todo o dano`, echo: (v) => `${v}% de chance: a arma golpeia 2×`, greed: (v) => `${v}%: próximo baú +1 raridade`, okConv: (v) => `${v}% do excesso → dano permanente` },
+  effNote: { combo: 'Conta todos os golpes do ataque (a ordem não importa)', execute: 'Após os golpes: chefe abaixo da linha morre na hora (máx. 20%)', okConv: 'Cada morte aumenta seu bônus permanente', greed: 'Sorteado ao abrir um baú' },
+  synLv: (n, lv, nx) => `${n} itens · Nv${lv}` + (nx ? ` (Nv${lv + 1} com ${nx})` : ' (MÁX)'),
+  synDesc: { Fire: 'Queimadura: seus golpes de Fogo continuam queimando', Ice: 'Congelamento: todo golpe é ampliado, armas de Gelo critam mais', Thunder: 'Cadeia: golpes de Trovão podem se dividir em raios (instável)' },
+  synFx: { Fire: (p, k) => `golpes de Fogo queimam ${p}% × ${k}`, Ice: (p, c) => `todos os golpes +${p}% · crít. Gelo +${c}%`, Thunder: (c, n) => `golpes de Trovão: ${c}% → ${n} raios` },
+  lv3: { Fire: 'INFERNO: +1 tique a cada 3 itens de Fogo extras', Ice: 'ESTILHAÇAR: +1× dano crítico para tudo', Thunder: 'TEMPESTADE: raios em cadeia podem critar' },
+  combosT: 'COMBOS', comboN: { melt: 'DERRETER', superconduct: 'SUPERCONDUÇÃO', overload: 'SOBRECARGA' },
+  comboD: { melt: 'Fogo + Gelo Nv1: queimadura ×3', superconduct: 'Gelo + Trovão Nv1: dano crítico ×2', overload: 'Fogo + Trovão Nv1: explosão de +35% dos golpes' },
+  comboOff: 'precisa de dois elementos no Nv1 (3 itens cada)',
+  weakT: 'FRACO', resistT: 'RESISTE', nextBoss: 'PRÓXIMO', infWeakTag: (x) => `FRAQUEZA ×${x}`, infResTag: (x) => `RESISTIDO ×${x}`,
+  infNote: 'Seu ataque assume o elemento do baú que você abrir', infPop: (el, x) => `${el} ×${x}!`,
+  execPop: 'EXECUÇÃO!', execLine: (p) => `Linha de execução ${p}%`, echoTag: 'ECO', overloadPop: (v) => `SOBRECARGA +${v}`, meltPop: 'DERRETER ×3!', scPop: 'SUPERCONDUÇÃO!',
+  permPop: (p) => `+${p}% PERMANENTE`, permLine: (p) => `Bônus permanente de excesso +${p}%`, greedPop: 'GANÂNCIA: +1 RARIDADE!',
+  gemDesc: 'Baús normais às vezes soltam uma. Remove sozinha seu pior item amaldiçoado; sem maldição, fica guardada.',
+  hitsCombo: (n, c) => `×${n} GOLPES · COMBO ×${c}`,
+  sub1: 'Chefes sem fim. Escolha um baú elemental, golpeie uma vez.',
+},
+/*</pt>*/
+/*<es>*/
+es: {
+  statLine: (ex, ec, gr, pm) => `Ejecución ${ex}% · Eco ${ec}% · Codicia ${gr}% · Perm. +${pm}%`, comboOn: 'ACTIVO', 
+  chestEl: (el) => `Cofre de ${el}`, darkChest: 'COFRE OSCURO', darkHint: 'Mejor botín… o un objeto MALDITO', blackHint: 'Mejor botín… o un objeto MALDITO',
+  rar: { COMMON: 'COMÚN', UNCOMMON: 'POCO COMÚN', RARE: 'RARO', EPIC: 'ÉPICO', LEGENDARY: 'LEGENDARIO', MYTHIC: 'MÍTICO', CURSED: 'MALDITO' },
+  eff: { elemB: (v, el) => `+${v}% daño de armas de ${el}`, critX: (v) => `+${v}× daño crítico`, combo: (v) => `+${v}% de daño por golpe del ataque`, execute: (v) => `Línea de ejecución +${v}% de PV`,
+    glob: (v) => `+${v}% todo el daño`, echo: (v) => `${v}% de prob.: el arma golpea 2 veces`, greed: (v) => `${v}%: siguiente cofre +1 rareza`, okConv: (v) => `${v}% del exceso → daño permanente` },
+  effNote: { combo: 'Cuenta todos los golpes del ataque (el orden no importa)', execute: 'Tras los golpes: si el jefe queda bajo la línea, muere al instante (máx. 20%)', okConv: 'Cada muerte aumenta tu bono permanente', greed: 'Se tira al abrir un cofre' },
+  synLv: (n, lv, nx) => `${n} objetos · Nv${lv}` + (nx ? ` (Nv${lv + 1} con ${nx})` : ' (MÁX)'),
+  synDesc: { Fire: 'Quemadura: tus golpes de Fuego siguen ardiendo', Ice: 'Congelación: todo golpe se amplifica, las armas de Hielo hacen más críticos', Thunder: 'Cadena: los golpes de Trueno pueden dividirse en rayos (variable)' },
+  synFx: { Fire: (p, k) => `golpes de Fuego queman ${p}% × ${k}`, Ice: (p, c) => `todos los golpes +${p}% · crít. Hielo +${c}%`, Thunder: (c, n) => `golpes de Trueno: ${c}% → ${n} rayos` },
+  lv3: { Fire: 'INFIERNO: +1 tic por cada 3 objetos de Fuego extra', Ice: 'ESTALLIDO: +1× daño crítico para todo', Thunder: 'TORMENTA: los rayos en cadena pueden ser críticos' },
+  combosT: 'COMBOS', comboN: { melt: 'FUSIÓN', superconduct: 'SUPERCONDUCCIÓN', overload: 'SOBRECARGA' },
+  comboD: { melt: 'Fuego + Hielo Nv1: quemadura ×3', superconduct: 'Hielo + Trueno Nv1: daño crítico ×2', overload: 'Fuego + Trueno Nv1: explosión de +35% de los golpes' },
+  comboOff: 'necesita dos elementos en Nv1 (3 objetos cada uno)',
+  weakT: 'DÉBIL', resistT: 'RESISTE', nextBoss: 'SIGUIENTE', infWeakTag: (x) => `DEBILIDAD ×${x}`, infResTag: (x) => `RESISTIDO ×${x}`,
+  infNote: 'Tu ataque toma el elemento del cofre que abras', infPop: (el, x) => `¡${el} ×${x}!`,
+  execPop: '¡EJECUCIÓN!', execLine: (p) => `Línea de ejecución ${p}%`, echoTag: 'ECO', overloadPop: (v) => `SOBRECARGA +${v}`, meltPop: '¡FUSIÓN ×3!', scPop: '¡SUPERCONDUCCIÓN!',
+  permPop: (p) => `+${p}% PERMANENTE`, permLine: (p) => `Bono permanente de exceso +${p}%`, greedPop: '¡CODICIA: +1 RAREZA!',
+  gemDesc: 'Los cofres normales a veces sueltan una. Quita sola tu peor objeto maldito; si no hay maldición, se guarda.',
+  hitsCombo: (n, c) => `×${n} GOLPES · COMBO ×${c}`,
+  sub1: 'Jefes sin fin. Elige un cofre elemental y golpea una vez.',
+},
+/*</es>*/
+};
+for (const l of LANGS) Object.assign(I18N[l], I18N8[l]);
 const NOUN_KEYS = ['Sword', 'Dagger', 'Mace', 'Bow', 'Axe', 'Blade', 'Staff', 'Spear', 'Armor', 'Boots', 'Helm', 'Amulet', 'Ring', 'Pendant', 'Medal', 'Talisman', 'Relic', 'Idol', 'Grimoire', 'Shard'];
 const CJK_FONT = { zh: 'FusionZH', ja: 'FusionJA', ko: 'FusionKO' };
 function detectLang() {
