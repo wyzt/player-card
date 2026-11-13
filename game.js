@@ -2,11 +2,11 @@
 const RULES = {
   rounds: 8,
   dragonHP: 1000,
-  wood:  { min: 40, max: 70 },
+  wood:  { min: 15, max: 30 },
   gold:  { accChance: 0.8, multMin: 0.3, multMax: 0.8, wMin: 20, wMax: 50 },
-  black: { goodChance: 0.5, wMin: 160, wMax: 260, cMin: 60, cMax: 130 },
+  black: { goodChance: 0.55, wMin: 190, wMax: 290, cMin: 70, cMax: 140 },
   setCount: 5, setMult: 2,
-  offerWeights: { wood: 0.45, gold: 0.25, black: 0.30 },
+  offerWeights: { wood: 0.5, gold: 0.22, black: 0.28 },
 };
 const TYPES = ['wood', 'gold', 'black'];
 const ELEMENTS = ['Fire', 'Ice', 'Thunder'];
@@ -39,7 +39,7 @@ function computeDamage(items) {
 
 // ===== CONTENT =====
 const EL_COLOR = { Fire: 0xff5a2a, Ice: 0x5ad2ff, Thunder: 0xffe04a };
-const EL_CSS = { Fire: '#ff7a4a', Ice: '#7adcff', Thunder: '#ffe866' };
+const EL_CSS = { Fire: '#ff8a5a', Ice: '#8ae2ff', Thunder: '#ffe866' };
 const CURSE_COL = 0xb070ff;
 // icon frames in assets/img/icons.png (34x34 each) -> item noun
 const ICONS = {
@@ -57,37 +57,78 @@ const NAMES = {
 };
 function nameItem(it) {
   const p = (a) => a[Math.floor(Math.random() * a.length)];
-  if (it.kind === 'cursed') { const c = p(ICONS.cursed); it.frame = c[0]; it.name = `${p(NAMES.cursed)} ${p(NAMES.pre[it.element])} ${c[1]}`; return it; }
-  const c = p(ICONS[it.kind][it.element]); it.frame = c[0];
-  it.name = `${p(NAMES.pre[it.element])} ${p(NAMES.mid)} ${c[1]}`;
+  if (it.kind === 'cursed') { const c = p(ICONS.cursed); it.frame = c[0]; it.name = `${p(NAMES.cursed)} ${p(NAMES.pre[it.element])} ${c[1]}`; }
+  else { const c = p(ICONS[it.kind][it.element]); it.frame = c[0]; it.name = `${p(NAMES.pre[it.element])} ${p(NAMES.mid)} ${c[1]}`; }
+  it.rarity = it.kind === 'cursed' ? 'CURSED' : (it.flat >= 240 || it.mult >= 0.7) ? 'LEGENDARY' : (it.flat >= 150 || it.mult >= 0.5) ? 'EPIC' : it.mult ? 'RARE' : 'COMMON';
   return it;
 }
-const statText = (it) => it.mult ? `+${it.mult.toFixed(1)}x DMG` : `${it.flat >= 0 ? '+' : ''}${it.flat} ATK`;
+// Every item states its own damage rule.
+const ruleText = (it) => it.kind === 'cursed' ? `${it.flat} ATK (cursed)` : it.mult ? `+${it.mult.toFixed(1)}x total damage` : `+${it.flat} ATK`;
+const setText = (it) => `${it.element} set: ${RULES.setCount} ${it.element} items = x${RULES.setMult} damage`;
 const itemCol = (it) => it.kind === 'cursed' ? CURSE_COL : EL_COLOR[it.element];
+const RARITY = {
+  COMMON: { css: '#d8d8d8', col: 0xd8d8d8, n: 10, shake: 0 },
+  RARE: { css: '#7adcff', col: 0x7adcff, n: 22, shake: 0 },
+  EPIC: { css: '#d58cff', col: 0xd58cff, n: 36, shake: 0.006 },
+  LEGENDARY: { css: '#ffcf40', col: 0xffcf40, n: 60, shake: 0.012 },
+  CURSED: { css: '#ff6a8a', col: 0x9a3aff, n: 44, shake: 0.012 },
+};
 
 // ===== PHASER =====
 const W = 1200, H = 628;
-const FONT = '"Trebuchet MS", Verdana, sans-serif';
+const FONT = '"Pixelify Sans", "Trebuchet MS", sans-serif';
+const LAVA_GROUND = 512;   // lava floor line of bg_lava drawn at 3x
 window.DC = { phase: 'boot', round: 0 };
 
 function txt(scene, x, y, s, size, color = '#ffffff', extra = {}) {
-  return scene.add.text(x, y, s, Object.assign({ fontFamily: FONT, fontSize: size + 'px', color, fontStyle: 'bold', stroke: '#000000', strokeThickness: Math.max(3, size / 8), align: 'center' }, extra)).setOrigin(0.5);
+  return scene.add.text(x, y, s, Object.assign({ fontFamily: FONT, fontSize: size + 'px', color, fontStyle: 'bold', stroke: '#140812', strokeThickness: Math.max(4, Math.round(size / 7)), align: 'center' }, extra)).setOrigin(0.5);
 }
 function sfx(scene, key, vol = 0.8) { try { scene.sound.play(key, { volume: vol }); } catch (e) {} }
-// 432x240 pixel backdrops, drawn at an exact 3x scale and centered
 function backdrop(scene, key, dim) {
   scene.add.image(W / 2, H / 2, key).setScale(3);
-  if (dim) scene.add.rectangle(0, 0, W, H, 0x0a0612, dim).setOrigin(0);
+  if (dim) scene.add.rectangle(-200, -200, W + 400, H + 400, 0x0a0612, dim).setOrigin(0);
+}
+// fantasy frame: dark plate, gold double border, corner studs
+function panel(scene, x, y, w, h, opts = {}) {
+  const g = scene.add.graphics();
+  const border = opts.border ?? 0xd9a441, fill = opts.fill ?? 0x140a18, a = opts.alpha ?? 0.86;
+  g.fillStyle(0x000000, 0.35); g.fillRoundedRect(x + 4, y + 6, w, h, 10);
+  g.fillStyle(fill, a); g.fillRoundedRect(x, y, w, h, 10);
+  g.lineStyle(3, border, 1); g.strokeRoundedRect(x, y, w, h, 10);
+  g.lineStyle(1, 0x5a3a1a, 1); g.strokeRoundedRect(x + 6, y + 6, w - 12, h - 12, 7);
+  g.fillStyle(border, 1); [[x, y], [x + w, y], [x, y + h], [x + w, y + h]].forEach(([cx, cy]) => g.fillRect(cx - 5, cy - 5, 10, 10));
+  g.fillStyle(0xfff0b0, 1); [[x, y], [x + w, y], [x, y + h], [x + w, y + h]].forEach(([cx, cy]) => g.fillRect(cx - 2, cy - 2, 4, 4));
+  return g;
 }
 function button(scene, x, y, label, cb, w = 260) {
   const c = scene.add.container(x, y);
-  const bg = scene.add.rectangle(0, 0, w, 64, 0x7a1c12).setStrokeStyle(4, 0xffd36a);
-  const t = txt(scene, 0, 0, label, 30, '#fff2c0');
-  c.add([bg, t]); c.setSize(w, 64);
-  bg.setInteractive({ useHandCursor: true }).on('pointerdown', () => { sfx(scene, 'click'); cb(); });
-  scene.tweens.add({ targets: c, scale: 1.05, yoyo: true, repeat: -1, duration: 600, ease: 'Sine.inOut' });
+  const g = scene.add.graphics();
+  g.fillStyle(0x000000, 0.4); g.fillRoundedRect(-w / 2 + 3, -30, w, 64, 12);
+  g.fillStyle(0x8a1c10, 1); g.fillRoundedRect(-w / 2, -34, w, 64, 12);
+  g.fillStyle(0xc0381c, 1); g.fillRoundedRect(-w / 2 + 4, -30, w - 8, 26, 9);
+  g.lineStyle(4, 0xffd36a, 1); g.strokeRoundedRect(-w / 2, -34, w, 64, 12);
+  const t = txt(scene, 0, -2, label, 32, '#fff4c8');
+  const hit = scene.add.rectangle(0, -2, w, 70, 0x000000, 0.001).setInteractive({ useHandCursor: true });
+  c.add([g, t, hit]); c.setSize(w, 64);
+  hit.on('pointerdown', () => { sfx(scene, 'click'); cb(); });
+  scene.tweens.add({ targets: c, scale: 1.06, yoyo: true, repeat: -1, duration: 600, ease: 'Sine.inOut' });
   return c;
 }
+function shadow(scene, x, y, w) { return scene.add.ellipse(x, y, w, w * 0.22, 0x000000, 0.45); }
+function burst(scene, x, y, color, n, speed = 260, tex = 'spark') {
+  const e = scene.add.particles(x, y, tex, {
+    speed: { min: speed * 0.35, max: speed }, angle: { min: 0, max: 360 }, lifespan: { min: 350, max: 800 },
+    scale: { start: 1.1, end: 0 }, alpha: { start: 1, end: 0 }, gravityY: 300, tint: [color, 0xffffff], blendMode: 'ADD', emitting: false,
+  });
+  e.explode(n);
+  scene.time.delayedCall(1000, () => e.destroy());
+  return e;
+}
+function popText(scene, t, scale = 1) {
+  t.setScale(0);
+  scene.tweens.add({ targets: t, scale: { from: 0, to: scale * 1.35 }, duration: 160, ease: 'Quad.out', onComplete: () => scene.tweens.add({ targets: t, scale, duration: 160, ease: 'Back.out' }) });
+}
+function heroGlow(spr) { try { if (spr.preFX) spr.preFX.addGlow(0xfff2b0, 3, 0, false, 0.1, 10); } catch (e) {} }
 
 class Boot extends Phaser.Scene {
   constructor() { super('boot'); }
@@ -99,15 +140,19 @@ class Boot extends Phaser.Scene {
     this.load.spritesheet('icons', I + 'icons.png', { frameWidth: 34, frameHeight: 34 });
     this.load.spritesheet('dragon_idle', I + 'dragon_idle.png', { frameWidth: 144, frameHeight: 64 });
     this.load.spritesheet('dragon_breath', I + 'dragon_breath.png', { frameWidth: 144, frameHeight: 64 });
-    this.load.spritesheet('knight_idle', I + 'knight_idle.png', { frameWidth: 22, frameHeight: 24 });
-    this.load.spritesheet('knight_run', I + 'knight_run.png', { frameWidth: 22, frameHeight: 24 });
-    this.load.spritesheet('knight_attack', I + 'knight_attack.png', { frameWidth: 40, frameHeight: 30 });
+    this.load.spritesheet('hero_idle', I + 'hero_idle.png', { frameWidth: 64, frameHeight: 64 });
+    this.load.spritesheet('hero_run', I + 'hero_run.png', { frameWidth: 64, frameHeight: 64 });
+    this.load.spritesheet('hero_attack', I + 'hero_attack.png', { frameWidth: 64, frameHeight: 64 });
     ['click', 'open', 'rare', 'curse', 'swing', 'hit', 'win', 'lose', 'music'].forEach((k) => this.load.audio(k, A + k + '.mp3'));
   }
   create() {
     const a = (key, tex, rate, repeat = -1) => this.anims.create({ key, frames: this.anims.generateFrameNumbers(tex), frameRate: rate, repeat });
     a('dragon-idle', 'dragon_idle', 8); a('dragon-breath', 'dragon_breath', 12, 0);
-    a('knight-idle', 'knight_idle', 8); a('knight-run', 'knight_run', 14); a('knight-attack', 'knight_attack', 20, 0);
+    a('hero-idle', 'hero_idle', 3); a('hero-run', 'hero_run', 16); a('hero-attack', 'hero_attack', 14, 0);
+    // generated FX textures
+    const g = this.make.graphics({ x: 0, y: 0, add: false });
+    g.fillStyle(0xffffff, 1); g.fillRect(0, 0, 6, 6); g.generateTexture('spark', 6, 6); g.clear();
+    g.fillStyle(0xffffff, 1); g.fillRect(0, 0, 3, 3); g.generateTexture('px', 3, 3); g.destroy();
     this.scene.start('title');
   }
 }
@@ -116,13 +161,15 @@ class Title extends Phaser.Scene {
   constructor() { super('title'); }
   create() {
     window.DC.phase = 'title';
-    backdrop(this, 'bg_lava', 0.25);
-    this.add.sprite(W / 2 + 190, 392, 'dragon_idle').setScale(4).setOrigin(0.5, 1).play('dragon-idle');
-    this.add.sprite(W / 2 - 290, 392, 'knight_idle').setScale(5).setOrigin(0.5, 1).play('knight-idle');
-    txt(this, W / 2, 90, 'DRAGON CHEST', 84, '#ffd36a', { strokeThickness: 10 });
-    txt(this, W / 2, 432, 'Open 8 chests. Then strike the dragon ONCE.', 30, '#ffffff');
-    txt(this, W / 2, 472, 'Kill it, or get eaten.', 26, '#ff9a7a');
-    const tap = txt(this, W / 2, 550, '▶  TAP TO START', 40, '#fff2c0');
+    backdrop(this, 'bg_lava', 0.2);
+    shadow(this, W / 2 + 120 + 94, LAVA_GROUND, 290); shadow(this, W / 2 - 300, LAVA_GROUND, 90);
+    this.add.sprite(W / 2 + 120, LAVA_GROUND, 'dragon_idle').setScale(4).setOrigin(0.5, 1).play('dragon-idle');
+    heroGlow(this.add.sprite(W / 2 - 300, LAVA_GROUND, 'hero_idle').setScale(3).setOrigin(0.5, 1).play('hero-idle'));
+    panel(this, W / 2 - 330, 22, 660, 170);
+    txt(this, W / 2, 82, 'DRAGON CHEST', 80, '#ffd36a', { strokeThickness: 10 });
+    txt(this, W / 2, 142, 'Open 8 chests. Strike the dragon ONCE.', 28, '#ffffff');
+    txt(this, W / 2, 175, 'Kill it, or get eaten.', 22, '#ff9a7a');
+    const tap = txt(this, W / 2, 575, '▶  TAP TO START', 40, '#fff2c0');
     this.tweens.add({ targets: tap, alpha: 0.35, yoyo: true, repeat: -1, duration: 650 });
     this.input.once('pointerup', () => {
       const snd = this.sound;
@@ -151,73 +198,85 @@ class Pick extends Phaser.Scene {
   init(data) { this.round = data.round; this.items = data.items; this.locked = false; this.done = false; this.canSkip = false; this.autoNext = null; }
   create() {
     window.DC.phase = 'pick'; window.DC.round = this.round + 1;
-    backdrop(this, 'bg_hoard', 0.5);
+    backdrop(this, 'bg_hoard', 0.45);
+    panel(this, 250, 14, 360, 92);
     txt(this, 430, 46, `CHEST ${this.round + 1} / ${RULES.rounds}`, 40, '#ffd36a');
-    txt(this, 430, 92, 'Pick one', 24, '#f0e6ff');
+    txt(this, 430, 84, 'Pick one', 22, '#f0e6ff');
     this.drawInventory();
     this.offer = rollOffer(Math.random);
-    const xs = [170, 430, 690];
+    const xs = [170, 430, 690], base = 390;
     this.chests = this.offer.map((c, i) => {
-      const x = xs[i], y = 300;
-      const glow = this.add.circle(x, y + 10, 100, EL_COLOR[c.element], 0.2).setBlendMode(Phaser.BlendModes.ADD);
-      this.tweens.add({ targets: glow, scale: 1.12, alpha: 0.32, yoyo: true, repeat: -1, duration: 900 + i * 120 });
-      const spr = this.add.image(x, y, 'chest_' + c.type).setScale(5);
-      const gem = this.add.star(x, y - 112, 4, 9, 20, EL_COLOR[c.element]).setStrokeStyle(3, 0x000000);
-      this.tweens.add({ targets: gem, y: y - 120, yoyo: true, repeat: -1, duration: 700, ease: 'Sine.inOut' });
-      const label = txt(this, x, y + 112, { wood: 'Wooden', gold: 'Gold', black: 'Black' }[c.type], 28, { wood: '#f0c08a', gold: '#ffd84a', black: '#c9a6ff' }[c.type]);
-      const el = txt(this, x, y + 145, c.element, 22, EL_CSS[c.element]);
-      const zone = this.add.zone(x, y, 220, 280).setInteractive({ useHandCursor: true });
+      const x = xs[i];
+      shadow(this, x, base, 160);
+      const glow = this.add.circle(x, base - 80, 105, EL_COLOR[c.element], 0.16).setBlendMode(Phaser.BlendModes.ADD);
+      this.tweens.add({ targets: glow, scale: 1.1, alpha: 0.26, yoyo: true, repeat: -1, duration: 900 + i * 120 });
+      const spr = this.add.image(x, base + 12, 'chest_' + c.type).setScale(5).setOrigin(0.5, 1);
+      const gem = this.add.star(x, base - 205, 4, 9, 20, EL_COLOR[c.element]).setStrokeStyle(3, 0x000000);
+      this.tweens.add({ targets: gem, y: base - 213, yoyo: true, repeat: -1, duration: 700, ease: 'Sine.inOut' });
+      const label = txt(this, x, base + 32, { wood: 'Wooden', gold: 'Gold', black: 'Black' }[c.type], 30, { wood: '#f0c08a', gold: '#ffd84a', black: '#c9a6ff' }[c.type]);
+      const el = txt(this, x, base + 64, c.element, 24, EL_CSS[c.element]);
+      const zone = this.add.zone(x, base - 80, 220, 300).setInteractive({ useHandCursor: true });
       zone.on('pointerdown', () => this.choose(i));
-      this.tweens.add({ targets: spr, y: y - 5, yoyo: true, repeat: -1, duration: 800 + i * 150, ease: 'Sine.inOut' });
-      return { c, x, y, spr, glow, gem, label, el, zone };
+      zone.on('pointerover', () => { if (this.locked) return; this.tweens.add({ targets: spr, scale: 5.4, duration: 120 }); glow.setAlpha(0.45); });
+      zone.on('pointerout', () => { if (this.locked) return; this.tweens.add({ targets: spr, scale: 5, duration: 120 }); glow.setAlpha(0.2); });
+      // idle sparkle so chests feel alive without lifting off the ground
+      const sp = this.add.particles(x, base - 70, 'px', { x: { min: -60, max: 60 }, y: { min: -50, max: 40 }, lifespan: 900, speedY: { min: -30, max: -10 }, scale: { start: 1.5, end: 0 }, frequency: 260, tint: EL_COLOR[c.element], blendMode: 'ADD' });
+      return { c, x, y: base - 80, spr, glow, gem, label, el, zone, sp };
     });
     this.input.on('pointerdown', () => { if (this.canSkip) this.next(); });
   }
   drawInventory() {
     const x0 = 880, y0 = 150;
-    this.add.rectangle(x0 - 15, y0 - 15, 330, 460, 0x000000, 0.65).setOrigin(0).setStrokeStyle(3, 0x8a6a3a);
-    txt(this, x0 + 150, y0 + 10, 'BAG', 24, '#ffd36a');
+    panel(this, x0 - 18, y0 - 30, 334, 486);
+    txt(this, x0 + 149, y0 + 2, 'BAG', 26, '#ffd36a');
     for (let i = 0; i < RULES.rounds; i++) this.addInvRow(i, this.items[i]);
   }
   addInvRow(i, it) {
-    const x0 = 880, y = 205 + i * 50;
-    if (!it) { this.add.rectangle(x0 + 2, y, 38, 38, 0xffffff, 0.07).setOrigin(0, 0.5); return; }
-    this.add.rectangle(x0 + 21, y, 42, 42, itemCol(it), 0.35).setStrokeStyle(2, itemCol(it));
+    const x0 = 880, y = 205 + i * 51;
+    if (!it) { this.add.rectangle(x0 + 21, y, 40, 40, 0xffffff, 0.06).setStrokeStyle(1, 0x5a4a3a); return; }
+    this.add.rectangle(x0 + 21, y, 42, 42, itemCol(it), 0.3).setStrokeStyle(2, itemCol(it));
     this.add.image(x0 + 21, y, 'icons', it.frame);
     const nm = it.name.length > 22 ? it.name.slice(0, 21) + '…' : it.name;
-    this.add.text(x0 + 50, y - 12, nm, { fontFamily: FONT, fontSize: '17px', color: '#ffffff', fontStyle: 'bold' });
-    this.add.text(x0 + 50, y + 7, statText(it), { fontFamily: FONT, fontSize: '14px', fontStyle: 'bold', color: it.kind === 'cursed' ? '#ff7a8a' : it.mult ? '#ffd84a' : '#b8f0a0' });
+    this.add.text(x0 + 50, y - 20, nm, { fontFamily: FONT, fontSize: '17px', color: '#ffffff', fontStyle: 'bold' });
+    this.add.text(x0 + 50, y + 1, ruleText(it), { fontFamily: FONT, fontSize: '16px', color: it.kind === 'cursed' ? '#ff7a8a' : it.mult ? '#ffd84a' : '#b8f0a0' });
   }
   choose(i) {
     if (this.locked) return; this.locked = true;
     const ch = this.chests[i];
-    this.chests.forEach((o, j) => { o.zone.disableInteractive(); if (j !== i) { this.tweens.killTweensOf([o.spr, o.glow, o.gem]); this.tweens.add({ targets: [o.spr, o.glow, o.gem, o.label, o.el], alpha: 0.12, duration: 250 }); } });
+    this.chests.forEach((o, j) => { o.zone.disableInteractive(); o.sp.stop(); if (j !== i) { this.tweens.killTweensOf([o.spr, o.glow, o.gem]); this.tweens.add({ targets: [o.spr, o.glow, o.gem, o.label, o.el], alpha: 0.12, duration: 250 }); } });
     sfx(this, 'click');
-    this.tweens.killTweensOf(ch.spr);
+    this.tweens.killTweensOf(ch.spr); ch.spr.setScale(5);
+    ch.glow.setAlpha(0.6);
     this.tweens.add({ targets: ch.spr, x: { from: ch.x - 6, to: ch.x + 6 }, duration: 55, yoyo: true, repeat: 4, onComplete: () => this.reveal(ch) });
   }
   reveal(ch) {
     const it = nameItem(openChest(ch.c, Math.random));
     this.items.push(it);
+    const R = RARITY[it.rarity];
     ch.spr.setTexture('open_' + ch.c.type).setX(ch.x);
-    const big = it.kind === 'cursed' || it.mult >= 0.6 || it.flat >= 200;
-    const burst = this.add.circle(ch.x, ch.y - 20, 30, itemCol(it), 0.9).setBlendMode(Phaser.BlendModes.ADD);
-    this.tweens.add({ targets: burst, scale: big ? 7 : 4, alpha: 0, duration: 600, onComplete: () => burst.destroy() });
-    if (big && it.kind !== 'cursed') this.cameras.main.flash(250, 255, 230, 150);
-    if (it.kind === 'cursed') this.cameras.main.shake(300, 0.01);
+    const ring = this.add.circle(ch.x, ch.y, 30, R.col, 0.8).setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({ targets: ring, scale: 2 + R.n / 10, alpha: 0, duration: 600, onComplete: () => ring.destroy() });
+    burst(this, ch.x, ch.y - 10, R.col, R.n, 200 + R.n * 4);
+    if (it.rarity !== 'COMMON') burst(this, ch.x, ch.y - 10, itemCol(it), Math.round(R.n / 2), 180, 'px');
+    if (R.shake) this.cameras.main.shake(300, R.shake);
+    if (it.rarity === 'LEGENDARY') this.cameras.main.flash(260, 255, 220, 120);
+    if (it.rarity === 'CURSED') this.cameras.main.flash(200, 120, 0, 160);
     sfx(this, 'open');
-    sfx(this, it.kind === 'cursed' ? 'curse' : big ? 'rare' : 'open', it.kind === 'cursed' || big ? 0.7 : 0.5);
-    const icon = this.add.image(ch.x, ch.y - 10, 'icons', it.frame).setScale(1);
+    sfx(this, it.kind === 'cursed' ? 'curse' : it.rarity === 'COMMON' ? 'open' : 'rare', it.rarity === 'COMMON' ? 0.4 : 0.7);
+    const icon = this.add.image(ch.x, ch.y, 'icons', it.frame).setScale(1);
     this.tweens.add({ targets: icon, y: ch.y - 150, scale: 3, duration: 450, ease: 'Back.out' });
+    // item card with the item's own damage rule
     const card = this.add.container(430, 540);
-    const bg = this.add.rectangle(0, 0, 680, 84, 0x000000, 0.8).setStrokeStyle(3, itemCol(it));
-    const t1 = txt(this, 0, -16, it.name, 28, it.kind === 'cursed' ? '#d9a6ff' : EL_CSS[it.element]);
-    const t2 = txt(this, 0, 20, `${it.kind === 'cursed' ? 'CURSED' : it.kind.toUpperCase()} · ${it.element} · ${statText(it)}`, 20, it.kind === 'cursed' ? '#ff7a8a' : '#ffffff');
-    card.add([bg, t1, t2]); card.setScale(0.6).setAlpha(0);
-    this.tweens.add({ targets: card, scale: 1, alpha: 1, duration: 250, ease: 'Back.out' });
+    const pg = panel(this, -330, -62, 660, 124, { border: R.col });
+    const tag = txt(this, -250, -38, it.rarity, 16, R.css, { strokeThickness: 4 });
+    const t1 = txt(this, 30, -36, it.name, 28, it.kind === 'cursed' ? '#d9a6ff' : EL_CSS[it.element]);
+    const t2 = txt(this, 0, 2, ruleText(it), 32, it.kind === 'cursed' ? '#ff6a7a' : it.mult ? '#ffd84a' : '#b8f0a0');
+    const t3 = txt(this, 0, 38, setText(it), 18, EL_CSS[it.element], { strokeThickness: 4 });
+    card.add([pg, tag, t1, t2, t3]); card.setAlpha(0);
+    this.tweens.add({ targets: card, alpha: 1, duration: 150 }); popText(this, card, 1);
     this.addInvRow(this.items.length - 1, it);
     this.time.delayedCall(350, () => { this.canSkip = true; });
-    this.autoNext = this.time.delayedCall(1700, () => this.next());
+    this.autoNext = this.time.delayedCall(1900, () => this.next());
   }
   next() {
     if (this.done) return; this.done = true;
@@ -232,96 +291,144 @@ class Strike extends Phaser.Scene {
   init(d) { this.items = d.items; this.struck = false; }
   create() {
     window.DC.phase = 'strike';
-    backdrop(this, 'bg_lava', 0.15);
+    backdrop(this, 'bg_lava', 0.12);
     this.res = computeDamage(this.items);
     window.DC.result = this.res;
-    const GROUND = 560; // lava floor line of the 3x backdrop
-    this.dragon = this.add.sprite(880, GROUND, 'dragon_idle').setScale(4).setOrigin(0.5, 1).play('dragon-idle');
-    this.hero = this.add.sprite(230, GROUND, 'knight_idle').setScale(5).setOrigin(0.5, 1).play('knight-idle');
-    this.add.rectangle(860, 110, 460, 96, 0x000000, 0.45);
-    txt(this, 860, 85, 'ANCIENT DRAGON', 34, '#ff8a6a');
-    this.add.rectangle(860, 128, 420, 30, 0x220000).setStrokeStyle(3, 0xffffff);
-    this.hp = this.add.rectangle(650, 128, 420, 24, 0xd22a2a).setOrigin(0, 0.5);
-    this.hpText = txt(this, 860, 128, `${RULES.dragonHP} / ${RULES.dragonHP}`, 20);
-    this.add.rectangle(0, 590, 8 * 50 + 30, 56, 0x000000, 0.55).setOrigin(0, 0.5);
+    this.dShadow = shadow(this, 900 + 94, LAVA_GROUND, 290);
+    this.hShadow = shadow(this, 230, LAVA_GROUND, 90);
+    this.dragon = this.add.sprite(900, LAVA_GROUND, 'dragon_idle').setScale(4).setOrigin(0.5, 1).play('dragon-idle');
+    this.hero = this.add.sprite(230, LAVA_GROUND, 'hero_idle').setScale(3).setOrigin(0.5, 1).play('hero-idle');
+    heroGlow(this.hero);
+    panel(this, 640, 30, 440, 120);
+    txt(this, 860, 66, 'ANCIENT DRAGON', 34, '#ff8a6a');
+    this.add.rectangle(860, 112, 400, 28, 0x220000).setStrokeStyle(3, 0xffd36a);
+    this.hp = this.add.rectangle(662, 112, 396, 22, 0xd22a2a).setOrigin(0, 0.5);
+    this.hpText = txt(this, 860, 112, `${RULES.dragonHP} / ${RULES.dragonHP}`, 20);
+    panel(this, 8, 560, 8 * 50 + 16, 60);
     this.items.forEach((it, i) => {
-      this.add.rectangle(35 + i * 50, 590, 42, 42, itemCol(it), 0.35).setStrokeStyle(2, itemCol(it));
-      this.add.image(35 + i * 50, 590, 'icons', it.frame);
+      this.add.rectangle(40 + i * 50, 590, 42, 42, itemCol(it), 0.3).setStrokeStyle(2, itemCol(it));
+      this.add.image(40 + i * 50, 590, 'icons', it.frame);
     });
-    txt(this, 250, 200, 'Your gear is ready.', 26);
-    this.btn = button(this, 250, 270, 'STRIKE!', () => this.strike(), 240);
+    this.ready = txt(this, 250, 190, 'Your gear is ready.', 28);
+    this.btn = button(this, 250, 262, 'STRIKE!', () => this.strike(), 240);
     window.DC.phase = 'strike-ready';
   }
+  update() { // shadows stay glued to the feet
+    if (this.hero) { this.hShadow.x = this.hero.x; this.hShadow.setVisible(this.hero.visible && this.hero.alpha > 0.2); this.hShadow.scaleX = this.hero.scaleX / 3; }
+    if (this.dragon) this.dShadow.x = this.dragon.x + 94 * this.dragon.scaleX / 4;
+  }
+  mouth() { return { x: this.dragon.x - 288 + 66 * 4, y: LAVA_GROUND - 36 * 4 }; }
   strike() {
     if (this.struck) return; this.struck = true; window.DC.phase = 'striking';
-    this.btn.destroy();
+    this.btn.destroy(); this.ready.destroy();
     const r = this.res, win = r.total >= RULES.dragonHP;
-    this.hero.play('knight-run');
+    this.hero.play('hero-run');
+    this.cameras.main.zoomTo(1.12, 500, 'Sine.easeInOut');
+    this.cameras.main.pan(700, 380, 500, 'Sine.easeInOut');
     this.tweens.add({
-      targets: this.hero, x: 520, duration: 420, ease: 'Cubic.in', onComplete: () => {
+      targets: this.hero, x: 760, duration: 470, ease: 'Quad.in', onComplete: () => {
         sfx(this, 'swing');
-        this.hero.play('knight-attack');
-        this.time.delayedCall(220, () => this.impact(r, win));
-        this.hero.once('animationcomplete', () => this.hero.play('knight-idle'));
+        this.hero.play('hero-attack');
+        this.time.delayedCall(140, () => this.impact(r, win));
+        this.hero.once('animationcomplete', () => this.hero.play('hero-idle'));
       },
     });
   }
+  slash(x, y) {
+    for (let k = 0; k < 3; k++) {
+      const g = this.add.graphics().setBlendMode(Phaser.BlendModes.ADD);
+      g.lineStyle(14 - k * 4, k === 0 ? 0xffffff : 0xffd36a, 1 - k * 0.25);
+      g.beginPath(); g.arc(x, y, 120 + k * 18, Phaser.Math.DegToRad(-120), Phaser.Math.DegToRad(40), false); g.strokePath();
+      g.setAlpha(0);
+      this.tweens.add({ targets: g, alpha: { from: 1, to: 0 }, duration: 380, delay: k * 50, onComplete: () => g.destroy() });
+    }
+  }
   impact(r, win) {
     sfx(this, 'hit', 0.9);
-    this.cameras.main.shake(400, 0.02); this.cameras.main.flash(200, 255, 255, 255);
-    this.dragon.setTintFill(0xffffff); this.time.delayedCall(120, () => this.dragon.clearTint());
-    const slash = this.add.rectangle(780, 430, 380, 14, 0xffffff).setAngle(-35).setBlendMode(Phaser.BlendModes.ADD);
-    this.tweens.add({ targets: slash, scaleY: 0, alpha: 0, duration: 400 });
-    const dmg = txt(this, 860, 230, '0', 72, '#ffd36a', { strokeThickness: 10 });
+    const cam = this.cameras.main;
+    cam.shake(450, 0.025); cam.flash(180, 255, 255, 255);
+    this.dragon.setTintFill(0xffffff); this.time.delayedCall(110, () => this.dragon.clearTint());
+    this.slash(this.dragon.x - 140, LAVA_GROUND - 130);
+    burst(this, this.dragon.x - 120, LAVA_GROUND - 130, 0xffd36a, 50, 420);
+    burst(this, this.dragon.x - 120, LAVA_GROUND - 130, 0xff5a2a, 30, 300, 'px');
+    // brief hit-stop for weight
+    this.anims.pauseAll(); this.time.delayedCall(90, () => this.anims.resumeAll());
     const parts = [`ATK ${r.flat}`, `x${(1 + r.mult).toFixed(1)}`]; if (r.set > 1) parts.push(`x${r.set} ${r.setEl} set`);
-    txt(this, 860, 178, parts.join('  '), 22, '#ffffff');
+    const dmg = txt(this, 860, 230, '0', 84, '#ffd36a', { strokeThickness: 12 });
+    popText(this, dmg, 1);
+    const br = txt(this, 860, 172, parts.join('   '), 24, '#ffffff'); br.setScrollFactor(1);
     const counter = { v: 0 };
     this.tweens.add({
       targets: counter, v: r.total, duration: 1300, ease: 'Cubic.out',
       onUpdate: () => {
         const v = Math.round(counter.v); dmg.setText(v);
         const left = Math.max(0, RULES.dragonHP - v);
-        this.hp.width = 420 * left / RULES.dragonHP; this.hpText.setText(`${left} / ${RULES.dragonHP}`);
+        this.hp.width = 396 * left / RULES.dragonHP; this.hpText.setText(`${left} / ${RULES.dragonHP}`);
       },
-      onComplete: () => this.time.delayedCall(400, () => win ? this.winSeq() : this.loseSeq()),
+      onComplete: () => {
+        popText(this, dmg, win ? 1.25 : 1);
+        this.time.delayedCall(450, () => { cam.zoomTo(1, 400); cam.pan(W / 2, H / 2, 400); this.time.delayedCall(420, () => win ? this.winSeq() : this.loseSeq()); });
+      },
     });
+    this.tweens.add({ targets: this.hero, x: 520, duration: 500, delay: 450, ease: 'Quad.out' });
   }
   winSeq() {
     sfx(this, 'win'); this.dragon.stop();
-    this.tweens.add({ targets: this.dragon, alpha: 0, y: this.dragon.y + 60, duration: 900, ease: 'Cubic.in' });
+    this.cameras.main.flash(300, 255, 230, 150); this.cameras.main.shake(500, 0.02);
+    for (let k = 0; k < 4; k++) this.time.delayedCall(k * 150, () => burst(this, this.dragon.x - 60 + k * 50, LAVA_GROUND - 120, 0xffcf40, 40, 380));
     this.dragon.setTint(0x777777);
-    this.time.delayedCall(700, () => this.end(true));
+    this.tweens.add({ targets: this.dragon, alpha: 0, scaleY: 3.2, duration: 1000, ease: 'Cubic.in' });
+    this.tweens.add({ targets: this.dShadow, alpha: 0, duration: 1000 });
+    this.time.delayedCall(1000, () => this.end(true));
   }
   loseSeq() {
-    sfx(this, 'lose');
-    this.tweens.add({
-      targets: this.dragon, x: 760, duration: 250, onComplete: () => {
-        this.dragon.play('dragon-breath');
-        this.time.delayedCall(300, () => {
-          this.hero.setTint(0xff4020); this.cameras.main.shake(300, 0.02); this.cameras.main.flash(300, 200, 40, 0);
-          this.tweens.add({ targets: this.hero, alpha: 0, duration: 300 });
-        });
-        this.dragon.once('animationcomplete', () => { this.dragon.play('dragon-idle'); this.time.delayedCall(300, () => this.end(false)); });
-      },
+    // the dragon lunges and EATS the hero (no fire)
+    window.DC.phase = 'eating';
+    const cam = this.cameras.main;
+    this.tweens.add({ targets: this.dragon, scaleY: 3.7, scaleX: 4.2, duration: 220, ease: 'Quad.out' }); // rear back
+    this.time.delayedCall(230, () => {
+      const targetX = this.hero.x + 288 - 66 * 4 + 30; // mouth lands on the hero
+      this.tweens.add({
+        targets: this.dragon, x: targetX, scaleX: 4, scaleY: 4, duration: 260, ease: 'Back.in', onComplete: () => {
+          const m = this.mouth();
+          this.hero.anims.stop();
+          this.hero.setTint(0xffb0a0);
+          this.tweens.add({ targets: this.hero, x: m.x + 10, y: m.y + 40, scaleX: 0.3, scaleY: 0.3, angle: -200, alpha: 0, duration: 260, ease: 'Quad.in' });
+          this.time.delayedCall(240, () => {
+            sfx(this, 'lose'); sfx(this, 'hit', 0.6);
+            cam.shake(420, 0.03); cam.flash(160, 180, 0, 0);
+            const chomp = txt(this, m.x, m.y - 90, 'CHOMP!', 64, '#ff5a4a', { strokeThickness: 10 });
+            chomp.setAngle(-8); popText(this, chomp, 1);
+            burst(this, m.x, m.y + 20, 0xff3030, 40, 300, 'px');
+            window.DC.phase = 'chomp';
+            // chew: squash + stretch twice
+            this.tweens.add({ targets: this.dragon, scaleY: 3.5, scaleX: 4.3, yoyo: true, repeat: 2, duration: 110, ease: 'Sine.inOut',
+              onComplete: () => { this.dragon.setScale(4); this.hero.setVisible(false); this.time.delayedCall(500, () => this.end(false)); } });
+          });
+        },
+      });
     });
   }
   end(win) {
     window.DC.phase = 'end'; window.DC.win = win;
-    this.add.rectangle(0, 0, W, H, 0x000000, 0.8).setOrigin(0);
-    txt(this, W / 2, 80, win ? 'DRAGON SLAIN!' : 'THE DRAGON ATE YOU', 64, win ? '#ffd36a' : '#ff5a4a', { strokeThickness: 10 });
-    txt(this, W / 2, 145, `You dealt ${this.res.total} / ${RULES.dragonHP}`, 28);
-    txt(this, W / 2, 210, 'THE HIDDEN RULES', 26, '#c9a6ff');
-    const lines = [
-      ['Wooden = small steady ATK · Gold = damage multipliers', '#ffe7a0'],
-      ['Black = 50% huge weapon, 50% curse', '#d9b8ff'],
-      [`${RULES.setCount}+ items of one element = x${RULES.setMult} damage`, '#9adfff'],
-    ];
-    lines.forEach(([s, c], i) => txt(this, W / 2, 260 + i * 46, s, 28, c));
-    button(this, W / 2, 520, 'PLAY AGAIN', () => this.scene.start('pick', { round: 0, items: [] }), 300);
+    this.add.rectangle(0, 0, W, H, 0x000000, 0.65).setOrigin(0);
+    panel(this, W / 2 - 360, 70, 720, 400, { border: win ? 0xffcf40 : 0xd04a3a });
+    const t = txt(this, W / 2, 140, win ? 'DRAGON SLAIN!' : 'THE DRAGON ATE YOU', 64, win ? '#ffd36a' : '#ff5a4a', { strokeThickness: 10 });
+    popText(this, t, 1);
+    txt(this, W / 2, 215, `You dealt ${this.res.total} / ${RULES.dragonHP}`, 32);
+    txt(this, W / 2, 262, win ? 'Legends will sing of your loot.' : 'Read your items. Choose better.', 24, '#e8dcff');
+    this.items.forEach((it, i) => {
+      const x = W / 2 - 4 * 70 + 35 + i * 70;
+      this.add.rectangle(x, 340, 56, 56, itemCol(it), 0.3).setStrokeStyle(2, itemCol(it));
+      this.add.image(x, 340, 'icons', it.frame).setScale(1.5);
+    });
+    if (win) burst(this, W / 2, 140, 0xffcf40, 60, 420);
+    button(this, W / 2, 545, 'PLAY AGAIN', () => this.scene.start('pick', { round: 0, items: [] }), 300);
   }
 }
 
-if (typeof Phaser !== 'undefined') {
+function startGame() {
+  if (window.__dcStarted) return; window.__dcStarted = true;
   window.game = new Phaser.Game({
     type: Phaser.AUTO, width: W, height: H, backgroundColor: '#0b0912', parent: 'game',
     pixelArt: true, roundPixels: true,
@@ -329,4 +436,10 @@ if (typeof Phaser !== 'undefined') {
     input: { keyboard: false }, audio: { disableWebAudio: false },
     scene: [Boot, Title, Pick, Strike],
   });
+}
+if (typeof Phaser !== 'undefined') {
+  // make sure the pixel font is ready before any Phaser text is drawn (max 3s wait)
+  const fontsReady = (document.fonts && document.fonts.load)
+    ? Promise.all(['700 32px "Pixelify Sans"', '400 16px "Pixelify Sans"'].map((f) => document.fonts.load(f))) : Promise.resolve();
+  Promise.race([fontsReady, new Promise((r) => setTimeout(r, 3000))]).then(startGame, startGame);
 }
