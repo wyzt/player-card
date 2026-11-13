@@ -708,6 +708,58 @@ es: {
 /*</es>*/
 };
 for (const l of LANGS) Object.assign(I18N[l], I18N9[l]);
+// v7.3: type-guarantee chest tag, boss drop source, overkill -> drop rarity, stats hint; intro no longer says "strike once"
+const I18N10 = {
+/*<en>*/
+en: {
+  sub1: 'Endless bosses. Pick ONE chest, then strike.', introLine: 'Pick 1 chest, then strike the boss.',
+  kindTag: { weapon: 'GUARANTEED WEAPON', armor: 'GUARANTEED ARMOR', accessory: 'GUARANTEED ACCESSORY' },
+  bossDrop: 'BOSS DROP', bossBadge: 'BOSS', okRare: (q, p, b) => `Overkill ×${q} → Rare+ ${p}% (normally ${b}%)`,
+  statHint: 'Armor / accessories unlock Execute · Echo · Greed · Permanent', statNew: 'NEW!',
+},
+/*</en>*/
+/*<zh>*/
+zh: {
+  sub1: '无尽 Boss。每关选一个宝箱，然后挥刀。', introLine: '选 1 个宝箱，然后砍向 Boss！',
+  kindTag: { weapon: '必出武器', armor: '必出护甲', accessory: '必出饰品' },
+  bossDrop: 'Boss 掉落', bossBadge: 'BOSS', okRare: (q, p, b) => `溢出 ×${q} → 稀有以上 ${p}%（平时 ${b}%）`,
+  statHint: '护甲/饰品可解锁 斩杀·回响·贪婪·永久加成', statNew: '新！',
+},
+/*</zh>*/
+/*<ja>*/
+ja: {
+  sub1: '終わりなきボス。宝箱を1つ選んで、斬りかかれ。', introLine: '宝箱を1つ選んで、ボスを斬れ！',
+  kindTag: { weapon: '武器確定', armor: '防具確定', accessory: '装飾品確定' },
+  bossDrop: 'ボスドロップ', bossBadge: 'BOSS', okRare: (q, p, b) => `オーバーキル ×${q} → レア以上 ${p}%（通常 ${b}%）`,
+  statHint: '防具・装飾品で 処刑・残響・強欲・永続 が解放', statNew: 'NEW！',
+},
+/*</ja>*/
+/*<ko>*/
+ko: {
+  sub1: '끝없는 보스. 상자 하나를 고르고, 베어라.', introLine: '상자 1개를 고르고, 보스를 베어라!',
+  kindTag: { weapon: '무기 확정', armor: '방어구 확정', accessory: '장신구 확정' },
+  bossDrop: '보스 드롭', bossBadge: 'BOSS', okRare: (q, p, b) => `오버킬 ×${q} → 레어 이상 ${p}% (평소 ${b}%)`,
+  statHint: '방어구/장신구로 처형·메아리·탐욕·영구 보너스 해금', statNew: 'NEW!',
+},
+/*</ko>*/
+/*<pt>*/
+pt: {
+  sub1: 'Chefões sem fim. Escolha UM baú e golpeie.', introLine: 'Escolha 1 baú e golpeie o chefão.',
+  kindTag: { weapon: 'ARMA GARANTIDA', armor: 'ARMADURA GARANTIDA', accessory: 'ACESSÓRIO GARANTIDO' },
+  bossDrop: 'DROP DO CHEFÃO', bossBadge: 'BOSS', okRare: (q, p, b) => `Overkill ×${q} → Raro+ ${p}% (normal ${b}%)`,
+  statHint: 'Armaduras / acessórios liberam Execução · Eco · Ganância · Permanente', statNew: 'NOVO!',
+},
+/*</pt>*/
+/*<es>*/
+es: {
+  sub1: 'Jefes sin fin. Elige UN cofre y golpea.', introLine: 'Elige 1 cofre y golpea al jefe.',
+  kindTag: { weapon: 'ARMA GARANTIZADA', armor: 'ARMADURA GARANTIZADA', accessory: 'ACCESORIO GARANTIZADO' },
+  bossDrop: 'BOTÍN DEL JEFE', bossBadge: 'JEFE', okRare: (q, p, b) => `Overkill ×${q} → Raro+ ${p}% (normal ${b}%)`,
+  statHint: 'Armaduras / accesorios desbloquean Ejecución · Eco · Codicia · Permanente', statNew: '¡NUEVO!',
+},
+/*</es>*/
+};
+for (const l of LANGS) Object.assign(I18N[l], I18N10[l]);
 const NOUN_KEYS = ['Sword', 'Dagger', 'Mace', 'Bow', 'Axe', 'Blade', 'Staff', 'Spear', 'Armor', 'Boots', 'Helm', 'Amulet', 'Ring', 'Pendant', 'Medal', 'Talisman', 'Relic', 'Idol', 'Grimoire', 'Shard'];
 const CJK_FONT = { zh: 'FusionZH', ja: 'FusionJA', ko: 'FusionKO' };
 function detectLang() {
