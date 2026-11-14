@@ -1072,8 +1072,10 @@ class Title extends Phaser.Scene {
     const t0 = txt(this, W / 2, 128, t('title'), 54, '#ffd36a', { strokeThickness: 10, maxW: W - 40 });
     const r1 = txtW(this, W / 2, 0, t('sub1'), 22, '#ffffff', W - 70), r2 = txtW(this, W / 2, 0, t('sub2'), 18, '#ff9a7a', W - 70);
     const r3 = txtW(this, W / 2, 0, t('sub3'), 18, '#ffe27a', W - 70);   // how a strike works: hero first, then every weapon once
-    r1.y = 172; r3.y = r1.y + r1.height + 8; r2.y = r3.y + r3.height + 8;
-    const bot = r2.y + r2.height + 16; const pg = panel(this, 16, 82, W - 32, bot - 82); pg.setDepth(-1); [t0, r1, r2, r3].forEach((o) => o.setDepth(1));
+    const r4 = txtW(this, W / 2, 0, t('sub4'), 18, '#9affd8', W - 70);   // overkill rewards: bonus chest at x3+, rarer with more, accessories -> permanent
+    r1.y = 172; r3.y = r1.y + r1.height + 8; r4.y = r3.y + r3.height + 8; r2.y = r4.y + r4.height + 8;
+    const bot = r2.y + r2.height + 16; const pg = panel(this, 16, 82, W - 32, bot - 82); pg.setDepth(-1); [t0, r1, r2, r3, r4].forEach((o) => o.setDepth(1));
+    window.DC.titleOk = r4.text; window.DC.titleBot = bot;
     window.DC.titleRules = r3.text;
     const best = loadBest();
     if (best.stage) txt(this, W / 2, bot + 26, t('titleBest', best.stage, fmt(best.hit)), 18, '#b8f0a0', { strokeThickness: 5, maxW: W - 30 });
@@ -1749,16 +1751,17 @@ class Strike extends Phaser.Scene {
     (this.barObjs || []).forEach((o) => o.setVisible(false));
     const D = 55, y0 = LOG_Y, add = (o) => { this.logObjs.push(hudAdd(this, o).setDepth(D)); return o; };
     this.logObjs = []; this.logRows = []; window.DC.hitLog = [];
-    add(panel(this, 6, y0, W - 12, H - 6 - y0, { alpha: 0.9 }));
+    // v8.2: no panel fill, the log floats over the scene; rows carry a thick stroke + drop shadow instead
+    const sh = (o) => o.setShadow(2, 2, '#000000', 3, true, true);
     const c = this.logC = add(this.add.container(0, 0));
     const mg = this.make.graphics({ add: false }); mg.fillStyle(0xffffff).fillRect(8, y0 + 6, W - 16, LOG_N * LOG_RH); c.setMask(mg.createGeometryMask()); this.logMask = mg;
     add(this.add.rectangle(W / 2, y0 + 10 + LOG_N * LOG_RH, W - 28, 2, 0xffcf40, 0.5));
-    add(txt(this, 20, H - 26, t('logTotal'), 18, '#ffe8a0', { strokeThickness: 4 }).setOrigin(0, 0.5));
-    this.logV = add(txt(this, W - 20, H - 26, '0', 22, '#ffd36a', { strokeThickness: 5 }).setOrigin(1, 0.5));
+    sh(add(txt(this, 20, H - 26, t('logTotal'), 18, '#ffe8a0', { strokeThickness: 5 }).setOrigin(0, 0.5)));
+    this.logV = sh(add(txt(this, W - 20, H - 26, '0', 22, '#ffd36a', { strokeThickness: 6 }).setOrigin(1, 0.5)));
   }
   logAdd(K, s, label, col, crit, chain, cv, neg) {
     if (!this.logC) return;
-    const c = this.logC, y0 = LOG_Y + 6, RH = LOG_RH, put = (o) => { hudAdd(this, o); c.add(o); return o; };
+    const c = this.logC, y0 = LOG_Y + 6, RH = LOG_RH, put = (o) => { hudAdd(this, o); c.add(o); if (o.type === 'Text') o.setShadow(2, 2, '#000000', 3, true, true); return o; };
     let icon = null, name = label, val = '', marks = [];
     if (K === 'hit') {
       const h = s.h; icon = h.it ? ['icons', h.it.frame] : ['hero_idle', 0];
@@ -1772,9 +1775,9 @@ class Strike extends Phaser.Scene {
     const row = [];
     if (icon) { const im = put(icon[1] === null ? this.add.image(22, yy, icon[0]).setScale(1.2) : this.add.image(22, yy, icon[0], icon[1]).setScale(icon[0] === 'icons' ? 0.6 : 0.7)); if (icon[0] === 'hero_idle') im.setCrop(14, 8, 36, 30); row.push(im); }
     let rx = W - 18;
-    if (val) { const v = put(txt(this, rx, yy, val, 17, neg ? '#c890ff' : crit ? '#ffffff' : col, { strokeThickness: 4, stroke: crit ? '#c8102a' : '#140812' }).setOrigin(1, 0.5)); row.push(v); rx -= v.width + 8; }
-    marks.slice().reverse().forEach(([m, mc]) => { const mt = put(txt(this, rx, yy, m, 16, mc, { strokeThickness: 3 }).setOrigin(1, 0.5)); row.push(mt); rx -= mt.width + 6; });
-    const nm = put(txt(this, 40, yy, name, 16, val ? '#e8dcc8' : col, { strokeThickness: 4 }).setOrigin(0, 0.5)); clipText(nm, Math.max(60, rx - 46)); row.push(nm);
+    if (val) { const v = put(txt(this, rx, yy, val, 17, neg ? '#c890ff' : crit ? '#ffffff' : col, { strokeThickness: 5, stroke: crit ? '#c8102a' : '#140812' }).setOrigin(1, 0.5)); row.push(v); rx -= v.width + 8; }
+    marks.slice().reverse().forEach(([m, mc]) => { const mt = put(txt(this, rx, yy, m, 16, mc, { strokeThickness: 5 }).setOrigin(1, 0.5)); row.push(mt); rx -= mt.width + 6; });
+    const nm = put(txt(this, 40, yy, name, 16, val ? '#f4ead8' : col, { strokeThickness: 5 }).setOrigin(0, 0.5)); clipText(nm, Math.max(60, rx - 46)); row.push(nm);
     this.logRows.push(row); window.DC.hitLog.push([name, val, marks.map((m) => m[0]).join(' ')]);
     const fast = Math.min(110, (this.res.hits.length > 8 ? 70 : 110));
     row.forEach((o) => { o.alpha = 0; o.x += 18; this.tweens.add({ targets: o, alpha: 1, x: o.x - 18, duration: fast }); });

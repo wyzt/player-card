@@ -884,6 +884,28 @@ es: { sub3: 'El héroe ataca primero y luego CADA arma tuya golpea una vez por s
 /*</es>*/
 };
 for (const l of LANGS) Object.assign(I18N[l], I18N14[l]);
+// v8.2: overkill rewards on the title (RULES.bonus.chestAt = 3, big bosses forced to 3; okShift grows with log2(overkill); accessory okConv -> G.perm)
+const I18N15 = {
+/*<en>*/
+en: { sub4: 'Overkill ×3+ drops a bonus chest (big bosses always do); more overkill = rarer loot. Accessories can turn overkill into permanent damage.' },
+/*</en>*/
+/*<zh>*/
+zh: { sub4: '伤害溢出 ×3 以上掉奖励宝箱\n大 Boss 必掉，溢出越多越容易出稀有\n饰品还能把溢出转成永久伤害' },
+/*</zh>*/
+/*<ja>*/
+ja: { sub4: 'オーバーキル×3以上でボーナス宝箱\n大ボスは必ず。超過が大きいほど高レア\n装飾品は超過を永続ダメージに変換' },
+/*</ja>*/
+/*<ko>*/
+ko: { sub4: '초과 피해 ×3 이상이면 보너스 상자\n대보스는 항상, 초과가 클수록 더 희귀\n장신구는 초과 피해를 영구 피해로 전환' },
+/*</ko>*/
+/*<pt>*/
+pt: { sub4: 'Excesso ×3+ dá um baú bônus (chefões grandes sempre); mais excesso = item mais raro. Acessórios convertem excesso em dano permanente.' },
+/*</pt>*/
+/*<es>*/
+es: { sub4: 'Exceso ×3+ da un cofre extra (jefes grandes siempre); más exceso = botín más raro. Los accesorios convierten exceso en daño permanente.' },
+/*</es>*/
+};
+for (const l of LANGS) Object.assign(I18N[l], I18N15[l]);
 const NOUN_KEYS = ['Sword', 'Dagger', 'Mace', 'Bow', 'Axe', 'Blade', 'Staff', 'Spear', 'Armor', 'Boots', 'Helm', 'Amulet', 'Ring', 'Pendant', 'Medal', 'Talisman', 'Relic', 'Idol', 'Grimoire', 'Shard'];
 const CJK_FONT = { zh: 'FusionZH', ja: 'FusionJA', ko: 'FusionKO' };
 function detectLang() {
