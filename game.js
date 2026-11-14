@@ -19,10 +19,10 @@ const RULES = {
     glob: [0.1, 0.15, 0.22, 0.3, 0.42, 0.6], echo: [0.04, 0.05, 0.07, 0.09, 0.12, 0.16], greed: [0.1, 0.14, 0.2, 0.26, 0.33, 0.45], okConv: [0.01, 0.015, 0.02, 0.03, 0.04, 0.06] },
   caps: { execute: 0.2, echo: 0.6, greed: 0.8 },
   // DARK chest: replaces one of the 3 sometimes; random element, rarity shifted up, may hold a CURSED item
-  dark: { chance: 0.25, from: 2, shift: 1.6, curse: 0.35 },
+  dark: { chance: 0.25, from: 2, shift: 1.9, curse: 0.3 },   // v8.3: curses now expire, no purify gems -> a bit less curse, a bit more loot
   curse: { kinds: { weapon: ['drain'], armor: ['critDown', 'seal'], accessory: ['weak', 'hpUp'] }, kindW: [0.4, 0.3, 0.3],
-    drain: [120, 200], critDown: 0.6, weak: 0.6, hpUp: 1.4 },
-  gem: 0.08,                       // PURIFY GEM chance from a normal chest (auto-removes the worst cursed item, else stored)
+    drain: [120, 200], critDown: 0.6, weak: 0.6, hpUp: 1.4,
+    life: [2, 5] },                // v8.3: every cursed item lasts a random number of stages (life[0]..life[1] strikes), then crumbles away
   hero: { atk: 40, crit: 0.05 },   // the hero's own swing grows like loot: atk * lootGrowth^stage
   critX: 2,
   // ELEMENTS: every 3 same-element items = +1 Lv (no cap); Lv1-3 add qualitative upgrades, every Lv adds MASTERY
@@ -48,7 +48,7 @@ const RULES = {
   bonus: { minor: false, chestAt: 3, jackpotAt: 8, okBase: 0.8, okPer: 0.3, okMax: 2.4 },
   milestone: 5,
   firstWeapons: 2,
-  smart: { hq: 7, logCap: 0, tight: 1.5, w: 50, dark: 3 },   // sim-only weights of the 'smart' pick policy
+  smart: { hq: 7, logCap: 0, tight: 1.5, w: 50, dark: 3, darkCursed: -8 },   // sim-only weights of the 'smart' pick policy
   variants: { weapon: 5, armor: 2, accessory: 2, cursed: 4 },
   cap: 1e300,
 };
@@ -99,6 +99,7 @@ function mkCurse(el, s, rng) {
   const C = RULES.curse, x = rng(), kind = x < C.kindW[0] ? 'weapon' : x < C.kindW[0] + C.kindW[1] ? 'armor' : 'accessory';
   const curse = pick(rng, C.kinds[kind]);
   const it = { id: UID++, kind, cursed: true, curse, element: el, v: ri(rng, 0, RULES.variants.cursed - 1), stage: s, rank: 0, rarity: 'CURSED', lo: 0, hi: 0, crit: 0 };
+  it.life = it.left = ri(rng, C.life[0], C.life[1]);
   if (curse === 'drain') { const k = lootScale(s), c = ri(rng, C.drain[0], C.drain[1]); it.lo = -capN(c * 1.2 * k); it.hi = -capN(c * 0.8 * k); }
   return it;
 }
@@ -113,7 +114,6 @@ function openChest(chest, rng, s = 0, G = null, noCurse = false, shift = 1) {
   if (G && rank < 5 && rng() < stats(G.items).greed) { rank++; greedy = true; }
   // the first chests of a run are always weapons (no run dies at stage 2 to three accessories)
   const it = s < R.firstWeapons ? mkWeapon(el, rank, s, rng) : mkRandom(el, rank, s, rng, dark ? null : chest.kind); if (greedy) it.greedy = true;
-  if (!dark && rng() < R.gem) it.gem = 1;
   return it;
 }
 // reward for overkilling a boss (q = damage / HP); a BIG BOSS always gives at least a bonus chest
@@ -129,7 +129,7 @@ function bonusDrop(dmg, hp, rng, s = 0, executed = false) {
   return { tier, q: q0, shift, rare: rarePlus(s, shift), base: rarePlus(s, 1), item: openChest({ type: 'normal', element: el }, rng, s, null, true, shift) };
 }
 // ---- gear: one list (newest last); everything stacks forever ----
-function newGear() { return { items: [], gems: 0, purified: 0, perm: 0 }; }
+function newGear() { return { items: [], expired: 0, perm: 0 }; }
 const curses = (G) => G.items.filter((it) => it.cursed);
 const hasCurse = (G, c) => G.items.some((it) => it.curse === c);
 const weakMult = (G) => G.items.reduce((a, it) => (it.curse === 'weak' ? a * RULES.curse.weak : a), 1);
@@ -175,10 +175,10 @@ function stats(list) {
 const critOf = (it, S) => it && it.cursed ? 0 : Math.min(0.95, (it ? it.crit : RULES.hero.crit) + (it && it.element === 'Ice' ? S.critUp : 0));
 const isEl = (it, e) => !!it && !it.cursed && it.element === e;
 function hitters(G) {
-  const off = offEls(G), list = G.items.filter((it) => it.cursed || !off.includes(it.element));
-  return { list, S: stats(list), weapons: list.filter((it) => it.kind === 'weapon') };
+  const off = offEls(G), list = G.items.filter((it) => it.cursed || !off.includes(it.element)), S = stats(list); S.weakM = weakMult(G);
+  return { list, S, weapons: list.filter((it) => it.kind === 'weapon') };
 }
-const hitMul = (it, S, G, B) => (S.glob + G.perm) * (it && !it.cursed ? (1 + S.elemB[it.element]) * S.mastery[it.element] * S.comboMul[it.element] : 1) * S.vuln * weakMult(G);
+const hitMul = (it, S, G, B) => (S.glob + G.perm) * (it && !it.cursed ? (1 + S.elemB[it.element]) * S.mastery[it.element] * S.comboMul[it.element] : 1) * S.vuln * (S.weakM !== undefined ? S.weakM : weakMult(G));   // PERF: weakM cached by hitters()
 // hero POWER: expected total damage of a strike vs boss B (curses included) - an expectation, not a guarantee
 function expStrike(G, B = null, s = 0) {
   const { S, weapons } = hitters(G), good = weapons.filter((w) => !w.cursed);
@@ -194,20 +194,17 @@ function expStrike(G, B = null, s = 0) {
   sum = Math.max(0, sum);
   return capN(sum * (1 + S.boom) + Math.max(0, fire) * S.burn * S.burnT);
 }
-// the cursed item whose removal helps most
-function worstCurse(G) {
-  let best = null, bv = -1;
-  curses(G).forEach((c) => { const g = { ...G, items: G.items.filter((x) => x !== c) }; const v = expStrike(g) / hpMult(g); if (v > bv) { bv = v; best = c; } });
-  return best;
-}
-function purify(G) { if (G.gems <= 0) return null; const c = worstCurse(G); if (!c) return null; G.items = G.items.filter((x) => x !== c); G.gems--; G.purified++; return c; }
-// returns what happened, for the UI: { type: 'add' | 'curse', item, gem, purified: [items] }
+// returns what happened, for the UI: { type: 'add' | 'curse', item, n }
 function equip(G, it) {
   G.items.push(it);
-  const ev = { type: it.cursed ? 'curse' : 'add', item: it, n: G.items.length, gem: !!it.gem, purified: [] };
-  if (it.gem) G.gems++;
-  let p; while ((p = purify(G))) ev.purified.push(p);
-  return ev;
+  return { type: it.cursed ? 'curse' : 'add', item: it, n: G.items.length };
+}
+// v8.3: after every CLEARED stage each cursed item loses one stage; at 0 it crumbles away. Returns the crumbled items.
+function tickCurses(G) {
+  const gone = [];
+  G.items.forEach((it) => { if (it.cursed && --it.left <= 0) gone.push(it); });
+  if (gone.length) { G.items = G.items.filter((x) => !gone.includes(x)); G.expired += gone.length; }
+  return gone;
 }
 function rollItem(it, rng) { return it.lo === it.hi ? it.lo : rng ? it.lo + rng() * (it.hi - it.lo) : (it.lo + it.hi) / 2; }
 // the strike vs boss B at stage s: hero + every weapon (+ echoes) hit on their own; chains, overload, burn; execute line
@@ -233,6 +230,74 @@ function computeDamage(G, rng, s = 0) {
 }
 // after a kill: OVERKILL CONVERSION turns part of the overkill into a permanent damage bonus (capped per kill)
 function afterKill(G, r) { const S = r.S, q = r.total / r.hp; if (!(S.okConv > 0) || !(q > 1)) return 0; const g = S.okConv * Math.min(3, q - 1); G.perm += g; return g; }
+// v8.3: POWER range + KILL CHANCE from a Monte Carlo of the very same strike (computeDamage with Math.random, as the real
+// swing uses): rolls, crits, echoes, chains, burn, overload, curses and the execute line all included. Cached per gear state.
+// PERF: POWER range + kill chance come from a Monte Carlo of the strike model of computeDamage (same rolls, crits, echoes,
+// chains, storm crits, overload, burn, curses, execute line), but its cost does not grow with the gear: the DIST_TOP hits
+// with the biggest expected damage are sampled one by one exactly as computeDamage does; every other hit is folded into
+// two normal sums (Fire / other) from their exact per-hit mean & variance (dozens of small independent hits -> CLT).
+// Builds with <= DIST_TOP weapons are therefore sampled exactly. Cached per gear state (recomputed only after a pick /
+// drop / curse change, never per frame) and time-boxed: the first call <= ~6 ms (>= DIST_MIN samples), distRefine()
+// tops it up to DIST_N a few ms per frame.
+const DIST_N = 400, DIST_MIN = 40, DIST_TOP = 32;
+const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+const distKey = (G, s) => s + '|' + G.perm + '|' + G.items.length + '|' + G.items.map((it) => it.id + (it.cursed ? ':' + it.left : '')).join(',');
+function gauss(rng) { let u = 0; while (!u) u = rng(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rng()); }
+// per-state preparation, O(items): each hit's multiplier, crit chance, chain odds and its exact mean / variance
+function distModel(G, s) {
+  const { S, weapons } = hitters(G), e = S.echo, X = S.critX;
+  const hs = [null, ...weapons].map((it) => {
+    const lo = it ? it.lo : heroAtk(s), hi = it ? it.hi : lo, r1 = (lo + hi) / 2, r2 = (lo * lo + lo * hi + hi * hi) / 3;
+    const K = hitMul(it, S, G, null), p = critOf(it, S), th = isEl(it, 'Thunder') && S.chance > 0, fire = isEl(it, 'Fire');
+    const C1 = 1 + p * (X - 1), C2 = 1 + p * (X * X - 1);
+    let Z1 = C1, Z2 = C2;
+    if (th) { const B1 = S.storm ? C1 : 1, B2 = S.storm ? C2 : 1, q = S.chance, c = S.chains * S.bolt, Y1 = q * c * B1, Y2 = q * c * c * B2; Z1 = C1 + Y1; Z2 = C2 + 2 * C1 * Y1 + Y2; }
+    const h1 = K * r1 * Z1, hv = Math.max(0, K * K * r2 * Z2 - h1 * h1), ec = it && !it.cursed ? e : 0;
+    return { lo, hi, K, p, th, fire, ec, m: h1 * (1 + ec), v: hv * (1 + ec) + ec * (1 - ec) * h1 * h1 };
+  });
+  const order = hs.map((h, i) => i).sort((a, b) => Math.abs(hs[b].m) - Math.abs(hs[a].m));
+  const top = order.slice(0, DIST_TOP).map((i) => hs[i]), rest = order.slice(DIST_TOP).map((i) => hs[i]);
+  const R = { mF: 0, vF: 0, mO: 0, vO: 0, eM: 0, eV: 0, n: 0 };
+  rest.forEach((h) => { if (h.fire) { R.mF += h.m; R.vF += h.v; } else { R.mO += h.m; R.vO += h.v; } R.eM += h.ec; R.eV += h.ec * (1 - h.ec); R.n++; });
+  const nBase = weapons.length;   // hits after the hero before echoes (cursed weapons hit too)
+  return { S, top, R, nBase, hp: stageHp(s, G), thr: S.execute > 0 ? stageHp(s, G) * (1 - S.execute) : stageHp(s, G) };
+}
+function distSample(M, rng) {
+  const S = M.S, X = S.critX, R = M.R;
+  // echoes first (they change the combo multiplier for every hit), like computeDamage's sequence
+  const ech = M.top.map((h) => h.ec > 0 && rng() < h.ec);
+  const eRest = R.n ? Math.max(0, Math.round(R.eM + Math.sqrt(R.eV) * gauss(rng))) : 0;
+  const cm = 1 + S.combo * (M.nBase + ech.filter(Boolean).length + eRest);
+  let sum = 0, fire = 0;
+  const hit = (h) => {
+    const roll = h.lo === h.hi ? h.lo : h.lo + rng() * (h.hi - h.lo), crit = rng() < h.p;
+    const v = roll * h.K * cm * (crit ? X : 1);
+    const ch = h.th && rng() < S.chance ? S.chains : 0, bc = S.storm && rng() < h.p ? X : 1, cv = ch ? roll * h.K * cm * S.bolt * ch * bc : 0;
+    sum = Math.max(0, sum + v + cv); if (h.fire) fire += v;
+  };
+  M.top.forEach((h, i) => { hit(h); if (ech[i]) hit(h); });
+  if (R.n) {   // the many small hits: two normal sums (scaled by this sample's combo multiplier)
+    const f = Math.max(0, R.mF + Math.sqrt(R.vF) * gauss(rng)) * cm, o = (R.mO + Math.sqrt(R.vO) * gauss(rng)) * cm;
+    sum = Math.max(0, sum + f + o); fire += f;
+  }
+  const total = sum * (1 + S.boom) + Math.max(0, fire) * S.burn * S.burnT;
+  return { total, kill: total >= M.thr };
+}
+function distStep(G, s, budget) {
+  const key = distKey(G, s);
+  let st = G.__dist;
+  if (!st || st.key !== key) { st = { key, v: [], kills: 0, d: null, M: null, ms: 0 }; Object.defineProperty(G, '__dist', { value: st, writable: true, configurable: true, enumerable: false }); }
+  if (st.d && st.d.done) return st.d;
+  const t0 = nowMs();
+  if (!st.M) st.M = distModel(G, s);
+  while (st.v.length < DIST_N && (st.v.length < DIST_MIN || nowMs() - t0 < budget)) { const r = distSample(st.M, Math.random); st.v.push(r.total); if (r.kill) st.kills++; }
+  st.ms += nowMs() - t0;
+  const v = [...st.v].sort((x, y) => x - y), n = v.length, q = (p) => v[Math.min(n - 1, Math.floor(p * n))];
+  st.d = { lo: q(0.1), med: q(0.5), hi: q(0.9), kill: st.kills / n, hp: st.M.hp, n, done: n >= DIST_N, ms: Math.round(st.ms * 10) / 10, exact: !st.M.R.n };
+  if (st.d.done) st.M = null;
+  return st.d;
+}
+const strikeDist = (G, s) => distStep(G, s, 6);
 const nextAt = (lv) => (lv + 1) * RULES.elem.step;
 // ---- pick policies (balance sim + the debug jump) ----
 // build focus: a PAIR of elements (most items) -> its combo RESONANCE + both masteries; ties -> fixed order
@@ -257,7 +322,7 @@ function smartPick(off, G, s, rng = Math.random) {
     const P = RULES.smart;
     let sc = buildValue(S, c.element) + (c.hq ? P.hq : 0) + Math.min(P.logCap, 2 * Math.log2(Math.max(0.01, q)));
     if (q < P.tight) sc += P.w * (q - P.tight);   // survival first when it is tight
-    if (c.type === 'dark') sc += curses(G).length && !G.gems ? -25 : P.dark;
+    if (c.type === 'dark') sc += curses(G).length ? P.darkCursed : P.dark;
     sc += rng() * 0.5; if (sc > bs) { bs = sc; best = c; }
   }
   return best;
@@ -524,8 +589,7 @@ class Tooltip {
     this.c.removeAll(true); this.cur = it;
     this.unhl(); if (obj.getData('row')) { obj.setFillStyle(0xffe6a0, 0.14).setStrokeStyle(2, 0xffd36a, 0.75); this.hl = obj; }
     const w = W - 24; let lines;
-    if (it.kind === 'gem') lines = [[t('gemT'), 26, '#e0b8ff'], [t('gemHeld', this.scene.G ? this.scene.G.gems : 0), 22, '#ffffff'], [t('gemDesc'), 18, '#d8ccff']];
-    else if (it.kind === 'combo') lines = [[t('comboN')[it.combo], 26, it.on ? '#ffd84a' : '#a89ab8'], [t('comboD')[it.combo], 20, '#ffffff'], [it.on ? t('comboOn') : t('comboOff'), 17, it.on ? '#7aff8a' : '#c8b49a']];
+    if (it.kind === 'combo') lines = [[t('comboN')[it.combo], 26, it.on ? '#ffd84a' : '#a89ab8'], [t('comboD')[it.combo], 20, '#ffffff'], [it.on ? t('comboOn') : t('comboOff'), 17, it.on ? '#7aff8a' : '#c8b49a']];
     else if (it.kind === 'stat') { const T2 = t('stTip'); lines = [[it.name, 24, it.css], [it.stat === 'curse' ? T2.curse : it.stat === 'perm' ? T2.perm(it.v, it.c) : T2[it.stat](it.v), 18, '#ffffff'], [it.atCap ? T2.cap(it.val) : T2.now(it.val), 20, '#ffd84a']]; }
     else if (it.kind === 'syn') { const [a, b] = synLines(it.element, items); lines = [[a, 22, EL_CSS[it.element]], [t('synDesc')[it.element], 18, '#ffffff'], [b, 24, '#ffd84a']]; }
     else {
@@ -534,7 +598,7 @@ class Tooltip {
         [`${t('rar')[it.rarity]} · ${t('kind')[it.kind]} · ${elName(it.element)}`, 19, R.css],
         [ruleText(it), 28, ruleCol(it)],
       ];
-      if (it.cursed) lines.push([t('curseNote'), 18, '#ffb0d0']);
+      if (it.cursed) lines.push([t('curseNote', it.left), 18, '#ffb0d0']);
       else {
         lines.push([it.kind === 'weapon' ? t('wNote') : t('effNote')[it.stat] || t('noCrit'), 16, '#c8b49a']);
         const [a, b] = synLines(it.element, items); lines.push([a, 18, EL_CSS[it.element]], [b, 17, '#ffe8a0']);
@@ -587,10 +651,10 @@ function makeFxTextures(scene) {
   mk('el_Fire', 12, 12, pix(['.....k......', '....kok.....', '....kook....', '...koyok.k..', '..koyyok.ok.', '.koyyyyookok', '.koyywyyyook', 'koyywwyyyyok', 'koyywwwyyyok', '.koyywwyyok.', '..kooyyook..', '...kkkkkk...'], { k: '#2a0804', o: '#e8401a', y: '#ffb030', w: '#fff2b0' }));
   mk('el_Ice', 12, 12, pix(['.....kk.....', '..k..bk..k..', '.kbk.bw.kbk.', '..kbkwbkbk..', '.kkkbwwbkkk.', 'kbbbwwwwbbbk', 'kbbbwwwwbbbk', '.kkkbwwbkkk.', '..kbkbwkbk..', '.kbk.wb.kbk.', '..k..kb..k..', '.....kk.....'], { k: '#06203a', b: '#5ad2ff', w: '#e8fbff' }));
   mk('el_Thunder', 12, 12, pix(['......kkkk..', '.....kyyyk..', '....kyyyk...', '...kyywk....', '..kyywkkkk..', '.kyyyyyyyk..', '.kkkkwyyk...', '....kyyk....', '...kywk.....', '..kyyk......', '..kyk.......', '..kk........'], { k: '#2a2004', y: '#ffe04a', w: '#ffffe0' }));
-  mk('gem', 12, 12, (c) => { // PURIFY GEM: a small faceted violet-white diamond (pixel art)
+  mk('hglass', 10, 13, (c) => { // v8.3 CURSE COUNTDOWN: a small pixel hourglass (stages left before a cursed item crumbles)
     const px = (x, y, col) => { c.fillStyle = col; c.fillRect(x, y, 1, 1); };
-    const rows = ['....kkkk....', '...kwwppk...', '..kwwppppk..', '.kwppppppdk.', 'kkkkkkkkkkkk', 'kwwppppppddk', '.kwpppppddk.', '..kwpppddk..', '...kwppdk...', '....kpdk....', '.....kk.....', '............'];
-    const C = { k: '#1a0630', w: '#ffffff', p: '#c88aff', d: '#7a3ad0' };
+    const rows = ['gggggggggg', '.kyyyyyyk.', '.kyyyyyyk.', '..kyyyyk..', '...kyyk...', '....kk....', '...k..k...', '..k.yy.k..', '.k.yyyy.k.', '.kyyyyyyk.', '.kyyyyyyk.', 'gggggggggg', '..........'];
+    const C = { g: '#ffcf40', k: '#e8f4ff', y: '#ff9ad0' };
     rows.forEach((r, y) => [...r].forEach((ch, x) => { if (C[ch]) px(x, y, C[ch]); }));
   });
   mk('glowdot', 128, 128, (c, w) => {
@@ -648,12 +712,12 @@ function loadBest() {
   return { stage: st, hit: isFinite(hit) ? hit : 0 };
 }
 function saveBest(st, hit) { try { localStorage.setItem('dc_best_stage', String(st)); localStorage.setItem('dc_best_hit', String(hit)); } catch (e) {} }
-const EV_COL = { add: 0x8aff7a, curse: CURSE_COL, purify: 0xb8f4ff, gem: 0xd08aff };
-const EV_CSS = { add: '#b8f0a0', curse: '#ff8acb', purify: '#c8f8ff', gem: '#e0b8ff' };
+const EV_COL = { add: 0x8aff7a, curse: CURSE_COL };
+const EV_CSS = { add: '#b8f0a0', curse: '#ff8acb' };
 function evText(ev) { return ev.type === 'curse' ? t('evCursed') : t('evAdd', ev.n); }
 function gearSummary(G) {
   return { n: G.items.length, weapon: ofKind(G, 'weapon').length, armor: ofKind(G, 'armor').length, accessory: ofKind(G, 'accessory').length,
-    cursed: curses(G).map((c) => c.curse), gems: G.gems, purified: G.purified };
+    cursed: curses(G).map((c) => c.curse), left: curses(G).map((c) => c.left), expired: G.expired };
 }
 // short victory fanfare on every BIG BOSS kill (the main loop ducks under it, then comes back)
 function milestoneJingle(scene) {
@@ -665,27 +729,19 @@ function milestoneJingle(scene) {
   try { snd.stopByKey('victory'); snd.play('victory', { volume: 0.5 }); } catch (e) {}
   window.DC.milestones = (window.DC.milestones || 0) + 1;
 }
-// PURIFY GEM counter (held gems), hover / tap for the tooltip. Returns the created objects.
-function gemBadge(scene, tip, G, x, y, depth = 30) {
-  if (!G.gems) return [];
-  const sq = scene.add.rectangle(x, y, 64, 34, 0x1a0a2a, 0.9).setStrokeStyle(2, 0xd08aff).setDepth(depth);
-  const ic = scene.add.image(x - 14, y, 'gem').setScale(1.6).setDepth(depth);
-  const n = txt(scene, x + 14, y, '×' + G.gems, 17, '#ffffff', { strokeThickness: 4 }).setDepth(depth + 1);
-  tip.attach(sq, { kind: 'gem', rarity: 'EPIC', element: 'Ice', name: t('gemT') });
-  return [sq, ic, n];
-}
-// PURIFY: the cleansed cursed item bursts into white-violet light and dissolves
-function purifyFx(scene, it, x, y, depth = 60) {
-  const ic = scene.add.image(x, y, 'icons', it.frame).setScale(2.2).setDepth(depth).setTint(0xb070ff);
-  const g = scene.add.image(x, y, 'glowdot').setTint(0xe8d8ff).setBlendMode(Phaser.BlendModes.ADD).setDepth(depth - 1).setScale(0.5).setAlpha(0.9);
-  scene.tweens.add({ targets: g, scale: 2.6, alpha: 0, duration: 700, ease: 'Quad.out', onComplete: () => g.destroy() });
-  scene.time.delayedCall(180, () => { ic.clearTint().setTintFill(0xffffff); });
-  scene.tweens.add({ targets: ic, scale: 3.2, alpha: 0, y: y - 30, delay: 260, duration: 520, ease: 'Quad.in', onComplete: () => ic.destroy() });
-  burst(scene, x, y, 0xe0c8ff, 26, 260, 'spark').setDepth(depth + 1);
-  burst(scene, x, y, 0xffffff, 12, 180, 'px').setDepth(depth + 1);
-  const lab = txt(scene, x, y - 54, t('evPurify'), 26, '#e8f8ff', { strokeThickness: 7, stroke: '#2a0a4a' }).setDepth(depth + 2);
-  popText(scene, lab, 1); scene.tweens.add({ targets: lab, y: lab.y - 26, alpha: 0, delay: 1000, duration: 400, onComplete: () => lab.destroy() });
-  sfx(scene, 'rare', 0.7); window.DC.purifyFx = (window.DC.purifyFx || 0) + 1;
+// v8.3 CURSE EXPIRY: the cursed item cracks, turns to grey dust that falls away, with a short message
+function crumbleFx(scene, it, x, y, depth = 66) {
+  const ic = hudAdd(scene, scene.add.image(x, y, 'icons', it.frame).setScale(3).setDepth(depth).setTint(0xb070ff));
+  const lab = hudAdd(scene, txt(scene, x, y - 76, t('evCrumble'), 26, '#e8d8ff', { strokeThickness: 7, stroke: '#2a0a4a', maxW: W - 30 }).setDepth(depth + 2));
+  const nm = hudAdd(scene, txt(scene, x, y + 62, it.name, 18, '#d9a6ff', { strokeThickness: 5, maxW: W - 40 }).setDepth(depth + 2));
+  popText(scene, lab, 1); sfx(scene, 'curse', 0.45);
+  scene.tweens.add({ targets: ic, angle: { from: -8, to: 8 }, yoyo: true, repeat: 3, duration: 55 });
+  scene.time.delayedCall(260, () => { if (!ic.active) return; ic.clearTint().setTint(0x8a7a8a); sfx(scene, 'tick', 0.5);
+    const d = scene.add.particles(x, y, 'px', { x: { min: -40, max: 40 }, y: { min: -36, max: 36 }, speedY: { min: 30, max: 120 }, speedX: { min: -50, max: 50 }, gravityY: 420, lifespan: 900, scale: { start: 3, end: 1 }, tint: [0x8a7a8a, 0x5a4a5a, 0xb070ff], quantity: 46, emitting: false }).setDepth(depth + 1);
+    hudAdd(scene, d); d.explode(46); scene.time.delayedCall(1100, () => d.destroy());
+    scene.tweens.add({ targets: ic, scaleY: 0.4, scaleX: 3.4, y: y + 30, alpha: 0, duration: 380, ease: 'Quad.in', onComplete: () => ic.destroy() }); });
+  scene.tweens.add({ targets: [lab, nm], alpha: 0, delay: 1150, duration: 300, onComplete: () => { lab.destroy(); nm.destroy(); } });
+  window.DC.crumbleFx = (window.DC.crumbleFx || 0) + 1;
 }
 
 const executeLine = (G) => hitters(G).S.execute;
@@ -699,10 +755,14 @@ function forceExecute(r) {
 const chestKey = (c) => c.type === 'dark' ? 'black' : c.element;
 // NEXT boss preview (one stage ahead): name + BIG tag (bosses have no elements)
 function nextBossLine(scene, x, y, s, size = 14, depth = 0) {
-  const n = s + 1, big = isBig(n);
-  const lab = txt(scene, x, y, `${t('nextBoss')}: ${bossName(n)}${big ? ' · ' + t('bigBoss') : ''}`, size, big ? '#ffb08a' : '#c8b49a', { strokeThickness: 4, maxW: W - 60 });
+  const n = s + 1, big = isBig(n), G = scene.G;
+  // v8.3: the next boss's HP, with the same curse hpUp the current HP uses - but only from curses that will still be there
+  // (a curse with 1 stage left crumbles when this stage is cleared; after the tick, every remaining curse carries over)
+  const keep = G ? { ...G, items: G.items.filter((it) => !it.cursed || it.left > (scene.cursesTicked ? 0 : 1)) } : null;
+  const nhp = G ? stageHp(n, keep) : bossHp(n);
+  const lab = txt(scene, x, y, `${t('nextBoss')}: ${bossName(n)}${big ? ' · ' + t('bigBoss') : ''} · HP ${fmt(nhp)}`, size, big ? '#ffb08a' : '#c8b49a', { strokeThickness: 4, maxW: W - 30 });
   if (depth) lab.setDepth(depth);
-  window.DC.nextBoss = { name: bossName(n), big };
+  window.DC.nextBoss = { name: bossName(n), big, hp: nhp, text: lab.text, size: parseFloat(lab.style.fontSize) * lab.scaleY };
   return [lab];
 }
 
@@ -768,6 +828,7 @@ function jumpRun(n, seed) {
       R.log.push({ stage: s, dmg: d.total, hp: d.hp, L: d.executed ? 1 : okLevel(d.total, d.hp) }); R.total += d.total; R.maxHit = Math.max(R.maxHit, d.total);
       afterKill(G, d);
       const b = bonusDrop(force ? Math.max(d.total, d.hp * 9) : d.total, d.hp, rng, s, d.executed); if (b) equip(G, nameItem(b.item));
+      tickCurses(G);
     }
     if (!dead) { window.DC.jumpTries = tries + 1; break; }
   }
@@ -809,7 +870,7 @@ function drawHud(sc) {
     add(sc.add.rectangle(44, 44, 62, 62, 0x2a1a30).setStrokeStyle(2, 0xffcf40).setDepth(D));
     const hi = add(sc.add.image(44, 54, 'hero_idle', 0).setScale(1.6).setDepth(D + 1)); hi.setCrop(14, 8, 36, 36);
     add(txt(sc, 86, 24, t('power'), 16, '#ffe8a0', { strokeThickness: 4 }).setOrigin(0, 0.5).setDepth(D + 1));
-    const pn = h.pn = sc.powN = add(txt(sc, 86, 55, fmt(sc.powShown !== undefined ? sc.powShown : sc.powV || 0), 34, '#ffd36a', { strokeThickness: 7, stroke: '#2a1404' }).setOrigin(0, 0.5).setDepth(D + 1));
+    const pn = h.pn = sc.powN = add(txt(sc, 86, 55, powStr(sc.powShown || sc.powV), 34, '#ffd36a', { strokeThickness: 7, stroke: '#2a1404' }).setOrigin(0, 0.5).setDepth(D + 1));
     pn.__maxW = 196; pn.__size = 34; fitText(pn, 196, 34);
     const s = sc.s, k0 = Math.floor(s / RULES.bigEvery) * RULES.bigEvery;
     add(txt(sc, W - 70, 27, t('stageN', s + 1), 22, '#ffd36a', { strokeThickness: 6, stroke: '#1a0a04', maxW: 118 }).setDepth(D + 1));
@@ -844,20 +905,26 @@ function drawHud(sc) {
   G.hudPrev = cur;
   window.DC.hud = { el: ELEMENTS.map((e) => [S.lv[e], S.cnt[e]]), combos: COMBO_ELS.map(([k]) => S[k]) };
 }
-const BAR = [['weapon', 0], ['armor', 15], ['accessory', 21], ['cursed', 27], ['gem', -1]];
-function barCounts(G) { const ok = (k) => G.items.filter((x) => x.kind === k && !x.cursed).length; return { weapon: ok('weapon'), armor: ok('armor'), accessory: ok('accessory'), cursed: curses(G).length, gem: G.gems }; }
+const BAR = [['weapon', 0], ['armor', 15], ['accessory', 21], ['cursed', 27]];
+function barCounts(G) { const ok = (k) => G.items.filter((x) => x.kind === k && !x.cursed).length; return { weapon: ok('weapon'), armor: ok('armor'), accessory: ok('accessory'), cursed: curses(G).length }; }
 function drawBar(sc) {
   ensureHud(sc);
   (sc.barObjs || []).forEach((o) => o.destroy()); const objs = sc.barObjs = [], add = (o) => { objs.push(hudAdd(sc, o)); return o; };
-  const D = 70, y = BAR_Y + 31, sw = (W - 12) / 5, cnt = barCounts(sc.G);
+  const D = 70, y = BAR_Y + 31, sw = (W - 12) / BAR.length, cnt = barCounts(sc.G);
   add(panel(sc, 6, BAR_Y, W - 12, 60, { border: 0xffcf40, alpha: 0.93 }).setDepth(D));
   sc.barPos = {}; sc.barIcons = {};
   BAR.forEach(([k, fr], i) => {
     const cx = 6 + sw * (i + 0.5), n = cnt[k], on = n > 0;
     if (i) add(sc.add.rectangle(6 + sw * i, y, 1, 36, 0xffcf40, 0.25).setDepth(D + 1));
-    const ic = add((fr < 0 ? sc.add.image(cx - 15, y, 'gem').setScale(2.6) : sc.add.image(cx - 15, y, 'icons', fr).setScale(1.05)).setDepth(D + 1).setAlpha(on ? 1 : 0.4));
+    const ic = add(sc.add.image(cx - 15, y, 'icons', fr).setScale(1.05).setDepth(D + 1).setAlpha(on ? 1 : 0.4));
     if (k === 'cursed') ic.setTint(0xc080ff);
     const ct = add(txt(sc, cx + 6, y, String(n), 22, on ? (k === 'cursed' ? '#ff8acb' : '#ffffff') : '#7a6a7a', { strokeThickness: 5 }).setOrigin(0, 0.5).setDepth(D + 1));
+    if (k === 'cursed' && on) {   // soonest-expiring curse: hourglass + stages left
+      ic.x = cx - 30; ct.x = cx - 10;   // make room: icon, count, hourglass, stages left
+      const lf = Math.min(...curses(sc.G).map((c) => c.left)), hx = ct.x + ct.width + 6;
+      add(sc.add.image(hx + 5, y, 'hglass').setScale(1.6).setDepth(D + 1)); add(txt(sc, hx + 14, y, String(lf), 18, '#ffd0e8', { strokeThickness: 4 }).setOrigin(0, 0.5).setDepth(D + 1));
+      window.DC.barCurseLeft = lf;
+    }
     const hit = add(sc.add.rectangle(cx, y, sw - 2, 58, 0xffffff, 0.001).setDepth(D + 2).setInteractive({ useHandCursor: true }).setData('item', true));
     hit.on('pointerdown', () => { if (!sc.statsLocked) sc.openGear(k); });
     sc.barPos[k] = { x: cx - 15, y }; sc.barIcons[k] = [ic, ct];
@@ -868,7 +935,7 @@ function bumpBar(sc, k) { (sc.barIcons && sc.barIcons[k] || []).forEach((o) => b
 const barKey = (it) => it.cursed ? 'cursed' : it.kind;
 // ---- the merged STATS + GEAR page ----
 function closeStats(sc) { sc.pageClosedAt = sc.time.now;
-  (sc.pageObjs || []).forEach((o) => o.destroy()); sc.pageObjs = []; sc.pageC = null; sc.gearOpen = false; sc.pageDrag = null;
+  (sc.pageObjs || []).forEach((o) => o.destroy()); sc.pageObjs = []; sc.pageC = null; sc.pageRowsFn = null; sc.gearOpen = false; sc.pageDrag = null;
   if (sc.tip) sc.tip.hide(true); window.DC.gearOpen = false; window.DC.page = null;
 }
 function openStats(sc, filter = null, keepScroll = false) {
@@ -889,7 +956,10 @@ function openStats(sc, filter = null, keepScroll = false) {
   let y = 6;
   const sect = (label) => { put(sc.add.rectangle(W / 2, y + 12, W - 24, 26, 0x2a1a10, 0.9).setStrokeStyle(1, 0xffcf40, 0.6)); T(W / 2, y + 12, label, 18, '#ffd36a', 0.5); y += 34; };
   // power
-  T(20, y + 16, t('power'), 18, '#ffe8a0'); T(W - 20, y + 16, fmt(sc.powV || expStrike(G, null, sc.s)), 28, '#ffd36a', 1); y += 40;
+  const PD = strikeDist(G, sc.s);
+  T(20, y + 16, t('power'), 18, '#ffe8a0'); const pv = T(W - 20, y + 16, powStr(PD), 28, '#ffd36a', 1); fitText(pv, W - 150, 28); y += 36;
+  const kt = T(W - 20, y + 10, t('killCh', killPct(PD.kill)), 18, killCss(PD.kill), 1);
+  const pnote = put(txtW(sc, 20, y + 24, t('powNote'), 16, '#c8b49a', W - 40)); pnote.setOrigin(0, 0).setAlign('left'); y += 28 + pnote.height + 6;
   sect(t('elemT'));
   ELEMENTS.forEach((el) => {
     const lv = Y.lv[el], n = Y.cnt[el], nx = nextAt(lv), st = RULES.elem.step, frac = Math.max(0, Math.min(1, (n - lv * st) / st));
@@ -913,20 +983,18 @@ function openStats(sc, filter = null, keepScroll = false) {
     y += 54;
   });
   sect(t('statsT'));
-  // execute / echo / greed / permanent: only shown once non-zero (dim hint while all four are 0); curses + gems always
+  // execute / echo / greed / permanent: only shown once non-zero (dim hint while all four are 0); curses always
   const U = [['exec', t('stExec'), pct(Y.execute) + '%', '#ff8ab0', Y.execute], ['echo', t('stEcho'), pct(Y.echo) + '%', '#ffffff', Y.echo], ['greed', t('stGreed'), pct(Y.greed) + '%', '#ffd84a', Y.greed], ['perm', t('stPerm'), '+' + pct(G.perm) + '%', '#ffb0e0', G.perm]].filter((r) => r[4]);
   // tap / hover a stat -> what it really does (numbers from the same stats() the strike uses)
   const CAP = { exec: RULES.caps.execute, echo: RULES.caps.echo, greed: RULES.caps.greed }, RAW = { exec: Y.execute, echo: Y.echo, greed: Y.greed };
-  const tipFor = (key, label, val, col) => key === 'gems' ? { kind: 'gem', rarity: 'RARE', name: label }
-    : { kind: 'stat', stat: key, rarity: key === 'curse' ? 'CURSED' : 'RARE', element: 'Fire', name: label, css: col === '#8a7a8a' ? '#e8dcc8' : col, val,
-        v: key === 'perm' ? pct(G.perm) : key === 'curse' ? 0 : pct(RAW[key]), c: pct(Y.okConv || 0), atCap: CAP[key] !== undefined && RAW[key] >= CAP[key] - 1e-9 };
-  const rows = U.concat([['curse', t('stCurses'), String(curses(G).length), curses(G).length ? '#ff6a9a' : '#8a7a8a'], ['gems', t('stGems'), String(G.gems), G.gems ? '#e0b8ff' : '#8a7a8a']]);
+  const tipFor = (key, label, val, col) => ({ kind: 'stat', stat: key, rarity: key === 'curse' ? 'CURSED' : 'RARE', element: 'Fire', name: label, css: col === '#8a7a8a' ? '#e8dcc8' : col, val,
+        v: key === 'perm' ? pct(G.perm) : key === 'curse' ? 0 : pct(RAW[key]), c: pct(Y.okConv || 0), atCap: CAP[key] !== undefined && RAW[key] >= CAP[key] - 1e-9 });
+  const rows = U.concat([['curse', t('stCurses'), String(curses(G).length), curses(G).length ? '#ff6a9a' : '#8a7a8a']]);
   if (!U.length) { const h = put(txtW(sc, W / 2, y, t('statHint'), 16, '#9a8a9a', W - 40)); y += h.height + 8; }
   window.DC.statRows = U.map((r) => r[0]);
   rows.forEach(([key, label, val, col], i) => {
     const x = i % 2 ? W / 2 + 6 : 20, wd = W / 2 - 26;
     const lt = T(x, y + 13, label, 18, '#e8dcc8'), vt = T(x + wd, y + 13, val, 18, col, 1); fitText(lt, wd - vt.width - 8, 18);
-    if (key === 'gems') put(sc.add.image(x + wd - vt.width - 14, y + 13, 'gem').setScale(1.5));
     drag(sc.tip.attach(put(sc.add.rectangle(x + wd / 2, y + 13, wd + 8, 30, 0xffffff, 0.001).setData('row', true)), tipFor(key, label, val, col)));
     if (i % 2 || i === rows.length - 1) y += 32;
   });
@@ -948,17 +1016,29 @@ function openStats(sc, filter = null, keepScroll = false) {
   y += 42;
   const items = [...G.items].reverse().filter((it) => !filter || barKey(it) === filter), rowH = 54;
   if (!items.length) { T(W / 2, y + 20, t('noneT'), 18, '#8a7a8a', 0.5); y += 44; }
-  items.forEach((it) => {
+  // PERF (v8.3): gear stacks forever (hundreds of items) -> only the rows near the viewport exist; scrolling creates /
+  // destroys rows incrementally (each row's objects are tracked by index)
+  const rowsTop = y, live = new Map();
+  const mkRow = (idx) => {
+    const it = items[idx], y = rowsTop + idx * rowH, n0 = c.list.length;
     const boss = it.src === 'boss', yy = y + rowH / 2;
     const row = drag(sc.tip.attach(put(sc.add.rectangle(W / 2, yy, W - 24, rowH - 4, 0xffffff, 0.001).setData('row', true)), it));
     if (it.cursed) put(sc.add.rectangle(W / 2, yy, W - 24, rowH - 6, 0x3a0a4a, 0.55));
     put(sc.add.rectangle(36, yy, 40, 40, itemCol(it), 0.3).setStrokeStyle(2, RARITY[it.rarity].col));
     const ic = put(sc.add.image(36, yy, 'icons', it.frame).setScale(1.05)); if (it.cursed && it.kind === 'weapon') ic.setTint(0xb070ff);
-    const nm = T(64, yy - 12, it.name, 18, it.cursed ? '#d9a6ff' : RARITY[it.rarity].css); clipText(nm, boss ? W - 136 : W - 84);
+    const nm = T(64, yy - 12, it.name, 18, it.cursed ? '#d9a6ff' : RARITY[it.rarity].css); clipText(nm, boss || it.cursed ? W - 136 : W - 84);
+    if (it.cursed) { put(sc.add.image(W - 50, yy - 12, 'hglass').setScale(1.7)); T(W - 18, yy - 12, String(it.left), 20, '#ffd0e8', 1); }
     const rt = T(64, yy + 12, ruleText(it), 16, ruleCol(it)); fitText(rt, W - 84, 16);
     if (boss) { const b = T(W - 18, yy - 12, t('bossBadge'), 15, '#ffffff', 1); b.setBackgroundColor('#a8281e').setPadding(4, 1, 4, 1).setStroke('#000', 0); }
-    y += rowH;
-  });
+    live.set(idx, c.list.slice(n0));
+  };
+  sc.pageRowsFn = () => {
+    const pad = 4, a = Math.max(0, Math.floor((sc.pageScroll - rowsTop) / rowH) - pad), b = Math.min(items.length, Math.ceil((sc.pageScroll + sc.pageView - rowsTop) / rowH) + pad);
+    live.forEach((objs, idx) => { if (idx < a || idx >= b) { objs.forEach((o) => o.destroy()); live.delete(idx); } });
+    for (let k = a; k < b; k++) if (!live.has(k)) mkRow(k);
+    window.DC.pageLive = live.size;
+  };
+  y += items.length * rowH;
   y += 12; sc.pageH = y;
   // header (on top of the scrolling content) + close button
   add(sc.add.rectangle(0, 0, W, TOP - 4, 0x07040c, 1).setOrigin(0).setDepth(D + 2).setInteractive());
@@ -974,20 +1054,51 @@ function openStats(sc, filter = null, keepScroll = false) {
 function pageScrollTo(sc, v) {
   if (!sc.pageC) return; const max = Math.max(0, sc.pageH - sc.pageView);
   sc.pageScroll = Phaser.Math.Clamp(v, 0, max); sc.pageC.y = sc.pageTop - sc.pageScroll;
+  if (sc.pageRowsFn) sc.pageRowsFn();
   if (window.DC.page) window.DC.page.scroll = sc.pageScroll;
 }
+// POWER text: '1.2M–3.5M' (10th-90th percentile of the strike); one number when both ends print the same
+function powStr(d) { if (!d) return '0'; if (typeof d === 'number') return fmt(d); const a = fmt(d.lo), b = fmt(d.hi); return a === b ? a : `${a}–${b}`; }
+const killCss = (k) => k >= 0.8 ? '#7aff8a' : k >= 0.5 ? '#ffd84a' : k >= 0.2 ? '#ffa040' : '#ff5a5a';
+const killPct = (k) => k > 0 && k < 0.005 ? '<1' : k < 1 && k > 0.995 ? '>99' : String(Math.round(k * 100));
+// kill chance inside the boss HP bar (right side; the HP number moves to the left side)
+function killTag(sc, ht, d) {
+  if (sc.killT && sc.killT.active) sc.killT.destroy();
+  ht.setOrigin(0, 0.5).setX(HPX + 8);
+  const k = sc.killT = hudAdd(sc, txt(sc, HPX + HPW - 8, ht.y, t('killCh', killPct(d.kill)), 18, killCss(d.kill), { strokeThickness: 5 }).setOrigin(1, 0.5).setDepth(ht.depth));
+  setFitKill(k, d); if (!d.done) distRefine(sc);
+  return k;
+}
+// finish an incomplete Monte Carlo a few ms per frame, then refresh POWER + kill chance quietly (no tween, no bump)
+function distRefine(sc) {
+  if (sc.__refine) return;
+  sc.events.once('shutdown', () => { sc.__refine = null; });
+  const ev = sc.__refine = sc.time.addEvent({ delay: 16, loop: true, callback: () => {
+    const G = sc.G; if (!G) { ev.remove(); if (sc.__refine === ev) sc.__refine = null; return; }
+    const d = distStep(G, sc.s, 4);
+    if (d.done) {
+      ev.remove(); if (sc.__refine === ev) sc.__refine = null;
+      if (sc.powN && sc.powN.active) { sc.powV = sc.powShown = d; setFit(sc.powN, powStr(d)); window.DC.powerHud = { text: sc.powN.text }; window.DC.power = d.med; window.DC.powerRange = [d.lo, d.hi]; }
+      if (sc.killT && sc.killT.active) { setFitKill(sc.killT, d); }
+    }
+  } });
+}
+function setFitKill(k, d) { k.setFontSize('18px').setText(t('killCh', killPct(d.kill))).setColor(killCss(d.kill)); fitText(k, HPW / 2 - 12, 18); window.DC.kill = { p: d.kill, text: k.text, lo: d.lo, hi: d.hi, med: d.med, n: d.n }; }
+function killTagOff(sc, ht) { if (sc.killT && sc.killT.active) sc.killT.destroy(); sc.killT = null; ht.setOrigin(0.5).setX(W / 2); }
 const UI = {
   drawPower() { this.setupGearInput(); this.powV = this.pw(); this.drawStats(); this.setPower(this.powV, false); },
   drawStats() { drawHud(this); drawBar(this); },
   drawGems() { this.drawStats(); },
   setPower(v, anim = true) {
     if (!this.powN || !this.powN.active) this.drawStats();
-    const cursed = curses(this.G).length > 0, col = cursed ? '#ff5a5a' : '#ffd36a', from = this.powShown || 0, up = v > from * 1.0001;
-    this.powV = v; this.powN.setColor(col); window.DC.power = v; window.DC.powerHud = { text: this.powN.text };
-    if (!anim) { this.powShown = v; setFit(this.powN, fmt(v)); return; }
-    const c = { v: from };
-    this.tweens.add({ targets: c, v, duration: 650, ease: 'Cubic.out', onUpdate: () => { if (this.powN.active) setFit(this.powN, fmt(c.v)); }, onComplete: () => {
-      this.powShown = v; if (!this.powN.active) return; setFit(this.powN, fmt(v)); window.DC.powerHud = { text: this.powN.text };
+    const cursed = curses(this.G).length > 0, col = cursed ? '#ff5a5a' : '#ffd36a', from = this.powShown || { lo: 0, hi: 0, med: 0 }, up = v.med > from.med * 1.0001;
+    this.powV = v; this.powN.setColor(col); window.DC.power = v.med; window.DC.powerRange = [v.lo, v.hi];
+    if (!v.done) distRefine(this);
+    if (this.hpT && this.hpT.active && this.scene.key === 'pick') killTag(this, this.hpT, v);
+    if (!anim) { this.powShown = v; setFit(this.powN, powStr(v)); window.DC.powerHud = { text: this.powN.text }; return; }
+    const c = { k: 0 };
+    this.tweens.add({ targets: c, k: 1, duration: 650, ease: 'Cubic.out', onUpdate: () => { if (this.powN.active) setFit(this.powN, powStr({ lo: from.lo + (v.lo - from.lo) * c.k, hi: from.hi + (v.hi - from.hi) * c.k })); }, onComplete: () => {
+      this.powShown = v; if (!this.powN.active) return; setFit(this.powN, powStr(v)); window.DC.powerHud = { text: this.powN.text };
       bump(this, this.powN, up ? 1.3 : 0.85);
       if (up) { const b = burst(this, this.powPos.x, this.powPos.y, 0xffcf40, 18, 200, 'px').setDepth(75); hudAdd(this, b); sfx(this, 'tick', 0.6); }
     } });
@@ -1022,8 +1133,8 @@ function bossBox(sc, s, hp, opts = {}) {
   const ghost = add(sc.add.rectangle(HPX, y + 44, HPW, 20, 0xffd8a0).setOrigin(0, 0.5));
   const bar = add(sc.add.rectangle(HPX, y + 44, HPW, 20, 0xd22a2a).setOrigin(0, 0.5));
   const ht = add(txt(sc, W / 2, y + 44, opts.text || `HP ${fmt(hp)}`, 18, '#ffffff', { strokeThickness: 4, maxW: HPW - 10 }));
-  o.push(...nextBossLine(sc, W / 2, y + 66, s, 16, D).map((q) => hudAdd(sc, q)));
-  return { objs: o, bar, ghost, ht };
+  const nx = nextBossLine(sc, W / 2, y + 66, s, 16, D).map((q) => hudAdd(sc, q)); o.push(...nx);
+  return { objs: o, bar, ghost, ht, nx };
 }
 
 class Boot extends Phaser.Scene {
@@ -1073,8 +1184,9 @@ class Title extends Phaser.Scene {
     const r1 = txtW(this, W / 2, 0, t('sub1'), 22, '#ffffff', W - 70), r2 = txtW(this, W / 2, 0, t('sub2'), 18, '#ff9a7a', W - 70);
     const r3 = txtW(this, W / 2, 0, t('sub3'), 18, '#ffe27a', W - 70);   // how a strike works: hero first, then every weapon once
     const r4 = txtW(this, W / 2, 0, t('sub4'), 18, '#9affd8', W - 70);   // overkill rewards: bonus chest at x3+, rarer with more, accessories -> permanent
-    r1.y = 172; r3.y = r1.y + r1.height + 8; r4.y = r3.y + r3.height + 8; r2.y = r4.y + r4.height + 8;
-    const bot = r2.y + r2.height + 16; const pg = panel(this, 16, 82, W - 32, bot - 82); pg.setDepth(-1); [t0, r1, r2, r3, r4].forEach((o) => o.setDepth(1));
+    const r5 = txtW(this, W / 2, 0, t('sub5'), 18, '#e0b0ff', W - 70);   // v8.3: dark chests / curses last 2-5 stages
+    r1.y = 172; r3.y = r1.y + r1.height + 8; r4.y = r3.y + r3.height + 8; r5.y = r4.y + r4.height + 8; r2.y = r5.y + r5.height + 8;
+    const bot = r2.y + r2.height + 16; const pg = panel(this, 16, 82, W - 32, bot - 82); pg.setDepth(-1); [t0, r1, r2, r3, r4, r5].forEach((o) => o.setDepth(1));
     window.DC.titleOk = r4.text; window.DC.titleBot = bot;
     window.DC.titleRules = r3.text;
     const best = loadBest();
@@ -1128,7 +1240,7 @@ class Pick extends Phaser.Scene {
   init(d) { this.run = d.run; this.s = this.run.s; this.G = this.run.G; this.locked = true; this.done = false; this.canSkip = false; this.autoNext = null; this.dim = null; this.inv = [];
     this.statsHidden = false; this.statsLocked = false; this.gearOpen = false; this.gearPinned = false; this.peekT = null; this.drag = null; this.hoverPow = false; this.hoverPop = false; this.uiCam = null; }
   get items() { return gearList(this.G); }
-  pw() { return expStrike(this.G, bossEl(this.s), this.s); }
+  pw() { return strikeDist(this.G, this.s); }
   create() {
     const s = this.s;
     window.DC.phase = 'pick'; window.DC.stage = s + 1; window.DC.gearPeek = false; window.DC.reveal = null; window.DC.pickReady = false; window.DC.missed = null; window.DC.event = null;
@@ -1139,7 +1251,7 @@ class Pick extends Phaser.Scene {
     this.B = bossEl(s);
     window.DC.roundText = t('stageN', s + 1);
     this.tip = new Tooltip(this, () => this.items);
-    const bx = bossBox(this, s, stageHp(s, this.G)); this.hpT = bx.ht;
+    const bx = bossBox(this, s, stageHp(s, this.G)); this.hpT = bx.ht; this.nxT = bx.nx;
     // the boss waits at the bottom right, the hero bottom left (the arena below the chests)
     const sc0 = Math.min(c.scale, 170 / c.fw, 150 / c.fh), bxp = W - 24 - c.fw * sc0 / 2;
     shadow(this, bxp, PICK_GROUND, Math.max(60, c.body[1] * sc0)); const bs = this.add.sprite(bxp, PICK_GROUND, c.tex).setScale(sc0).setOrigin(0.5, 1).play(c.anim); if (c.tint) bs.setTint(c.tint);
@@ -1231,14 +1343,13 @@ class Pick extends Phaser.Scene {
     this.heroS = this.add.sprite(64, PICK_GROUND, 'hero_idle').setScale(2.2).setOrigin(0.5, 1).play('hero-idle'); heroGlow(this.heroS);
     UI.drawPower.call(this);
   }
-  forcedItem(ch) { // test hook: DC.force = a rarity name (+ DC.forceKind) | 'CURSED' | 'GEM'
+  forcedItem(ch) { // test hook: DC.force = a rarity name (+ DC.forceKind) | 'CURSED' (+ DC.forceCurse, DC.forceLeft)
     const f = window.DC.force; if (!f) return null; window.DC.force = null;
     const rng = Math.random;
     if (f === 'CURSED') { // DC.forceCurse = 'drain' | 'critDown' | 'seal' | 'weak' | 'hpUp'
       const want = window.DC.forceCurse; window.DC.forceCurse = null;
-      for (let k = 0; k < 400; k++) { const c = mkCurse(ch.c.element, this.s, rng); if (!want || c.curse === want) return c; }
+      for (let k = 0; k < 400; k++) { const c = mkCurse(ch.c.element, this.s, rng); if (!want || c.curse === want) { if (window.DC.forceLeft) { c.left = c.life = window.DC.forceLeft; window.DC.forceLeft = null; } return c; } }
     }
-    if (f === 'GEM') { const it = openChest({ type: 'normal', element: ch.c.element }, rng, this.s); it.gem = 1; return it; }
     const r = RANKS.indexOf(f); if (r < 0) return null;
     const kind = window.DC.forceKind; window.DC.forceKind = null;
     return kind && kind !== 'weapon' ? mkGear(kind, ch.c.element, r, this.s, rng) : mkWeapon(ch.c.element, r, this.s, rng);
@@ -1412,7 +1523,7 @@ class Pick extends Phaser.Scene {
       const tag = txt(this, -CWd / 2 + 60, 0, t('rar')[tier], 16, R.css, { strokeThickness: 4, maxW: 108 });
       const t1 = txt(this, 54, 0, it.name, 22, it.cursed ? '#d9a6ff' : EL_CSS[it.element], { maxW: CWd - 140 });
       const t2 = txtW(this, 0, 0, ruleText(it), 22, ruleCol(it), CWd - 24);
-      const t3 = txtW(this, 0, 0, ev.type === 'curse' ? `${evText(ev)}  ${t('curseNote')}` : it.kind === 'weapon' ? `${evText(ev)} · ${t('wNote')}` : `${evText(ev)} · ${t('noCrit')}`, 16, EV_CSS[ev.type], CWd - 24);
+      const t3 = txtW(this, 0, 0, ev.type === 'curse' ? `${evText(ev)}  ${t('curseNote', it.left)}` : it.kind === 'weapon' ? `${evText(ev)} · ${t('wNote')}` : `${evText(ev)} · ${t('noCrit')}`, 16, EV_CSS[ev.type], CWd - 24);
       const h = 14 + 26 + 6 + t2.height + 6 + t3.height + 12;
       tag.y = t1.y = -h / 2 + 14 + 13; t2.y = -h / 2 + 46; t3.y = t2.y + t2.height + 6;
       const pg = panel(this, -CWd / 2, -h / 2, CWd, h, { border: R.col });
@@ -1424,17 +1535,18 @@ class Pick extends Phaser.Scene {
     this.time.delayedCall(big ? 650 : 280, () => this.gearEvent(ev, icon));
     // tap anywhere to skip once the reveal has landed
     setTimeout(() => { this.canSkip = true; if (window.DC.reveal) window.DC.reveal.skippable = true; }, big ? (leg ? 1000 : 750) : 350);
-    this.autoNext = this.time.delayedCall(READ_MS + { COMMON: 1800, UNCOMMON: 1900, RARE: 2000, CURSED: 2100, EPIC: 2300, LEGENDARY: 2600, MYTHIC: 2800 }[tier] + (ev.purified.length ? 900 + 500 * ev.purified.length : 0) + (ev.gem ? 300 : 0), () => this.next(true));
+    this.autoNext = this.time.delayedCall(READ_MS + { COMMON: 1800, UNCOMMON: 1900, RARE: 2000, CURSED: 2100, EPIC: 2300, LEGENDARY: 2600, MYTHIC: 2800 }[tier] + (ev.type === 'curse' ? 400 : 0), () => this.next(true));
   }
   // the found item flies into the hero's POWER box; the number rolls to the new expected damage, the gear list peeks open
-  // with the new item sliding in at the top; a PURIFY GEM flies to its counter and cleanses the worst cursed item
+  // with the new item sliding in at the top
   gearEvent(ev, icon) {
-    window.DC.event = { type: ev.type, n: ev.n, gem: ev.gem, purified: ev.purified.map((p) => p.curse), curse: ev.item.curse || null };
+    window.DC.event = { type: ev.type, n: ev.n, curse: ev.item.curse || null, left: ev.item.cursed ? ev.item.left : null };
     const it = ev.item, N = (n) => Math.max(4, Math.round(n * (this.scale.displaySize.width < 700 ? 0.6 : 1)));
     const col = EV_COL[ev.type];
     // the item flies down into its bottom-bar slot (count bumps); POWER rolls to the new expected damage
     const after = () => {
       this.hpT.setText(`HP ${fmt(stageHp(this.s, this.G))}`).setColor(hasCurse(this.G, 'hpUp') ? '#ffb0a0' : '#ffffff');
+      if (this.nxT) { this.nxT.forEach((q) => q.destroy()); this.nxT = nextBossLine(this, W / 2, BOSS_Y + 66, this.s, 16, 60).map((q) => hudAdd(this, q)); }   // a new hpUp curse also raises the next boss
       this.setPower(this.pw()); this.drawStats();
     };
     flyToBar(this, it, { x: icon.x, y: icon.y, s: icon.scaleX * 0.8 }, null, null, () => {
@@ -1444,16 +1556,6 @@ class Pick extends Phaser.Scene {
       this.tweens.add({ targets: lab, y: lab.y - 30, alpha: 0, delay: 1100, duration: 400, onComplete: () => lab.destroy() });
       after();
       if (this.ups && this.ups.length) { buildBanner(this, this.ups); this.ups = null; }
-      if (ev.gem) { // the gem pops out and flies to its bar counter
-        const gp = (this.barPos || {}).gem || { x: W - 40, y: BAR_Y + 30 };
-        const g = hudAdd(this, this.add.image(W / 2, CARD_Y - 120, 'gem').setScale(3).setDepth(42));
-        const gl = hudAdd(this, txt(this, W / 2, CARD_Y - 170, t('evGem'), 22, EV_CSS.gem, { strokeThickness: 6, maxW: W - 30 }).setDepth(42));
-        popText(this, gl, 1); sfx(this, 'rare', 0.6);
-        this.tweens.add({ targets: gl, alpha: 0, y: gl.y - 24, delay: 1100, duration: 400, onComplete: () => gl.destroy() });
-        this.tweens.add({ targets: g, x: gp.x, y: gp.y, scale: 1.4, duration: 520, delay: 200, ease: 'Quad.in', onComplete: () => { g.destroy(); hudAdd(this, burst(this, gp.x, gp.y, 0xd08aff, N(16), 160, 'px').setDepth(42)); bumpBar(this, 'gem'); } });
-      }
-      const cp = (this.barPos || {}).cursed || { x: W / 2, y: BAR_Y };
-      ev.purified.forEach((p, k) => this.time.delayedCall((ev.gem ? 760 : 380) + k * 500, () => { purifyFx(this, p, Phaser.Math.Clamp(cp.x, 80, W - 80), cp.y - 70, 60); after(); bumpBar(this, 'cursed'); }));
     });
   }
   next(fromTimer) {
@@ -1507,7 +1609,7 @@ class Intro extends Phaser.Scene {
     this.time.delayedCall(400, () => this.input.on('pointerdown', (p, over) => { if (!this.gearOpen && this.time.now - (this.pageClosedAt || -1e9) > 350 && !over.some((o) => o.getData && o.getData('item') || o.__hud)) this.go(); }));
     this.time.delayedCall(s ? 2600 : 3600, () => this.go(true));
   }
-  pw() { return expStrike(this.G, bossEl(this.s), this.s); }
+  pw() { return strikeDist(this.G, this.s); }
   go(auto) {
     if (this.gone) return;
     if (auto && (this.gearOpen || (this.tip && this.tip.visible))) { this.time.delayedCall(800, () => this.go(true)); return; }   // reading the gear: wait
@@ -1517,11 +1619,11 @@ class Intro extends Phaser.Scene {
 }
 
 class Strike extends Phaser.Scene {
-  pw() { return expStrike(this.G, bossEl(this.s), this.s); }
+  pw() { return strikeDist(this.G, this.s); }
   constructor() { super('strike'); }
   init(d) {
     this.statsHidden = false; this.statsLocked = false; this.gearOpen = false; this.gearPinned = false; this.peekT = null; this.drag = null; this.hoverPow = false; this.hoverPop = false; this.uiCam = null; this.execd = false; this.scShown = false; this.comboN = 0; this.rc = 0; this.recoilOn = false;
-    this.run = d.run; this.s = this.run.s; this.G = this.run.G; this.log = this.run.log; this.struck = false; this.leaving = false;
+    this.run = d.run; this.s = this.run.s; this.G = this.run.G; this.log = this.run.log; this.struck = false; this.leaving = false; this.cursesTicked = false; this.dropItem = null;
     this.cfg = bossFor(this.s); this.hpMax = stageHp(this.s, this.G);
   }
   get items() { return gearList(this.G); }
@@ -1549,7 +1651,7 @@ class Strike extends Phaser.Scene {
     heroGlow(this.hero);
     // boss info box (UI camera: same spot while the main camera zooms / shakes)
     const bx = bossBox(this, s, this.hpMax, { text: `${fmt(this.hpMax)} / ${fmt(this.hpMax)}` });
-    this.hp = bx.bar; this.hpGhost = bx.ghost; this.ghostHold = 0; this.hpText = bx.ht; this.bossHud = bx.objs;
+    this.hp = bx.bar; this.hpGhost = bx.ghost; this.ghostHold = 0; this.hpText = bx.ht; this.bossHud = bx.objs; this.bossHud.push(killTag(this, bx.ht, strikeDist(this.G, s)));
     if (this.execL0 = executeLine(this.G)) { const ex = HPX + HPW * this.execL0; this.bossHud.push(hudAdd(this, this.add.rectangle(ex, BOSS_Y + 44, 3, 30, 0xff4a8a).setDepth(61))); }   // EXECUTE line marker
     this.dbObjs = [];
     // the HUD + bottom gear bar stay usable until STRIKE is pressed (tap = STATS + GEAR page)
@@ -1585,7 +1687,7 @@ class Strike extends Phaser.Scene {
     this.charge();
   }
   charge() {
-    window.DC.phase = 'windup';
+    window.DC.phase = 'windup'; killTagOff(this, this.hpText);   // the swing starts: the bar now tracks the real damage
     // WINDUP: the hero pulls back and squashes for ~0.15s before dashing in (the "here it comes" beat)
     synth(this, 'windup'); this.hero.anims.pause();
     this.tweens.add({ targets: this.hero, x: this.hero.x - 26, scaleX: 3.25, scaleY: 2.8, angle: -8, duration: 150, ease: 'Quad.out', onComplete: () => {
@@ -1634,8 +1736,9 @@ class Strike extends Phaser.Scene {
     this.rays = hudAdd(this, this.add.image(TX, TY, 'rays').setTint(0xffd36a).setBlendMode(Phaser.BlendModes.ADD).setDepth(43).setScale(0).setAlpha(0));
     this.tweens.add({ targets: this.rays, angle: 360, duration: 6000, repeat: -1 });
     this.dmgLabel = hudAdd(this, txt(this, TX, TY - 60, t('damage'), 18, '#ffe8b0', { strokeThickness: 5, maxW: W - 40 }).setDepth(46));
-    this.dmg = hudAdd(this, txt(this, TX, TY, '0', 72, '#ffffff', { strokeThickness: 12 }).setDepth(46));
-    popText(this, this.dmg, 1);
+    // v8.3 fix: the counter used to be created as '0' and popped on impact, ~260 ms before the first hit landed -> a big "0"
+    // flashed on every strike. It now stays hidden until the first real damage arrives, and then pops with that number.
+    this.dmg = hudAdd(this, txt(this, TX, TY, '', 72, '#ffffff', { strokeThickness: 12 }).setDepth(46)).setAlpha(0); this.dmgOn = false;
     this.br = hudAdd(this, txt(this, TX, TY + 50, '', 16, '#ffffff', { strokeThickness: 4, maxW: W - 20 }).setDepth(45));
     this.dmgScale = 1; this.shown = 0;
     this.logInit();
@@ -1660,6 +1763,7 @@ class Strike extends Phaser.Scene {
     window.DC.result.seqMs = Math.round(nPre * 230 + nVol * hitGap + Math.min(nb, 4) * 230);
     let sum = 0, burn = 0, next = 1, hitsDone = 0;
     const show = (v) => {
+      if (!this.dmgOn) { if (!(v > 0)) return; this.dmgOn = true; this.dmg.setAlpha(1); popText(this, this.dmg, 1); if (this.logV) this.logV.setAlpha(1); }
       this.dmg.setText(fmt(v));
       const lim = Math.min(1.9, (W - 30) / Math.max(1, this.dmg.width)); if (this.dmg.scaleX > lim) { this.dmg.setScale(lim); this.dmgScale = Math.min(this.dmgScale, lim); }
       const left = this.execd ? 0 : Math.max(0, this.hpMax - v);
@@ -1757,7 +1861,7 @@ class Strike extends Phaser.Scene {
     const mg = this.make.graphics({ add: false }); mg.fillStyle(0xffffff).fillRect(8, y0 + 6, W - 16, LOG_N * LOG_RH); c.setMask(mg.createGeometryMask()); this.logMask = mg;
     add(this.add.rectangle(W / 2, y0 + 10 + LOG_N * LOG_RH, W - 28, 2, 0xffcf40, 0.5));
     sh(add(txt(this, 20, H - 26, t('logTotal'), 18, '#ffe8a0', { strokeThickness: 5 }).setOrigin(0, 0.5)));
-    this.logV = sh(add(txt(this, W - 20, H - 26, '0', 22, '#ffd36a', { strokeThickness: 6 }).setOrigin(1, 0.5)));
+    this.logV = sh(add(txt(this, W - 20, H - 26, '', 22, '#ffd36a', { strokeThickness: 6 }).setOrigin(1, 0.5))).setAlpha(0);   // hidden until the first damage (no '0')
   }
   logAdd(K, s, label, col, crit, chain, cv, neg) {
     if (!this.logC) return;
@@ -1828,12 +1932,12 @@ class Strike extends Phaser.Scene {
       sfx(this, 'boom', 0.7); this.recoil(30); return;
     }
     // weapon hits: a gold crescent + kick on a crit, THUNDER bolts on a chain (both rate-limited on long volleys)
-    if (crit && now - (this.lastCritFx || 0) > (many ? 160 : 60)) {
+    if (crit && now - (this.lastCritFx || 0) > (many ? 320 : 60)) {   // PERF: long volleys keep the VFX density bounded
       this.lastCritFx = now; this.slash(hd.x + Phaser.Math.Between(-40, 40), hd.y + Phaser.Math.Between(-30, 30), many ? 0.9 : 1.2, 0xffd23a);
       // crit HITSTOP instead of a camera shake (no shaking during the volley); bigger crits freeze longer, rate-limited
       if (!many && now - (this.lastStop || -1e9) > 260) { this.lastStop = now; this.hitStop(Phaser.Math.Clamp(60 + 6 * Math.log10(Math.max(1, this.res.total / this.hpMax) + 1) * 10, 60, 85)); }
     }
-    if (chain && now - (this.lastChainFx || 0) > (many ? 200 : 90)) {
+    if (chain && now - (this.lastChainFx || 0) > (many ? 400 : 90)) {
       this.lastChainFx = now;
       for (let k = 0; k < Math.min(4, 1 + chain); k++) {
         const bx = hd.x + Phaser.Math.Between(-200, 200), b = this.add.image(bx, LAVA_GROUND + 30, 'beam').setOrigin(0.5, 1).setTint(k % 2 ? 0xffffff : 0xffe04a)
@@ -1844,7 +1948,7 @@ class Strike extends Phaser.Scene {
     }
   }
   afterCount(r, show, getNext) {
-    show(r.total); this.dmg.setText(fmt(r.total));
+    show(r.total); this.dmg.setText(fmt(r.total)); if (!this.dmgOn) { this.dmgOn = true; this.dmg.setAlpha(1); if (this.logV) this.logV.setText(fmt(r.total)).setAlpha(1); }   // a real 0 total (all drained) still shows at the end
     const parts = [t('strikeSum', r.hits.length, r.crits, r.chained)]; if (r.boom > 0) parts.push(t('overloadPop', fmt(r.boom))); if (r.burn > 0) parts.push(t('burnPop', fmt(r.burn)));
     setFit(this.br, parts.join('  ·  ') + `  =  ${fmt(r.total)}`);
     this.finalLabel(r);
@@ -2051,12 +2155,11 @@ class Strike extends Phaser.Scene {
         const cb = rl.y + rl.height + 12, cardBg = panel(this, 12, 540, W - 24, cb - 540, { border: R.col, alpha: 0.95 }).setDepth(63).setAlpha(0);
         this.tweens.add({ targets: [cardBg, rt, nm, rl], alpha: 1, duration: 200, delay: 200 }); popText(this, nm, 1);
         window.DC.bonusCard = { x: X, y: 590, name: it.name, rarity: it.rarity, bottom: cb };
-        window.DC.event = { type: ev.type, n: ev.n, gem: ev.gem, purified: ev.purified.map((p) => p.curse) };
+        window.DC.event = { type: ev.type, n: ev.n };
         // equip it: the event label pops above the item, the gear bar redraws
         this.time.delayedCall(600, () => {
-          const el = txt(this, X, Math.min(BAR_Y - 22, cb + 26), ev.gem ? `${evText(ev)}  ${t('evGem')}` : evText(ev), 20, ev.gem ? EV_CSS.gem : EV_CSS[ev.type], { strokeThickness: 6, maxW: W - 30 }).setDepth(65);
+          const el = txt(this, X, Math.min(BAR_Y - 22, cb + 26), evText(ev), 20, EV_CSS[ev.type], { strokeThickness: 6, maxW: W - 30 }).setDepth(65);
           popText(this, el, 1); sfx(this, 'tick', 0.55);
-          ev.purified.forEach((p, k) => this.time.delayedCall(250 + k * 450, () => { purifyFx(this, p, IX, iy, 66); }));
           window.DC.bonusShown = true;
         });
         // stays up long enough to read; tap to continue sooner
@@ -2081,9 +2184,23 @@ class Strike extends Phaser.Scene {
     this.time.delayedCall(160, () => flyToBar(this, it, sp, t('bossDrop'), '#ff9a8a', () => { window.DC.gearPeek = true; window.DC.dropFiled = { name: it.name, rows: this.G.items.length, bar: barKey(it) }; }));
     this.time.delayedCall(1700, done);
   }
+  crumble(gone, done) {
+    window.DC.phase = 'crumble';
+    if (this.gearOpen) this.closeGear(); if (this.tip) this.tip.hide(true);
+    (this.clearTxt || []).forEach((o) => o.active && this.tweens.add({ targets: o, alpha: 0, duration: 200 }));
+    this.children.list.filter((o) => o.depth > 60 && o.depth < 70 && o.active && !o.__hud).forEach((o) => this.tweens.add({ targets: o, alpha: 0, duration: 200 }));
+    gone.forEach((it, k) => this.time.delayedCall(250 + k * 650, () => { crumbleFx(this, it, W / 2, 500); this.time.delayedCall(420, () => { this.drawStats(); this.setPower(this.pw()); bumpBar(this, 'cursed'); }); }));
+    this.time.delayedCall(250 + gone.length * 650 + 1000, done);
+  }
   toNextStage() {
     if (this.leaving) return; this.leaving = true;
     if (this.dropItem) { this.fileDrop(() => { this.leaving = false; this.dropItem = null; this.toNextStage(); }); return; }
+    if (!this.cursesTicked) {   // v8.3: every cleared stage -1 on each cursed item; at 0 it crumbles away
+      this.cursesTicked = true; const gone = tickCurses(this.G);
+      window.DC.curseTick = { stage: this.s + 1, gone: gone.map((c) => c.curse), left: curses(this.G).map((c) => c.left) };
+      if (gone.length) { this.crumble(gone, () => { this.leaving = false; this.toNextStage(); }); return; }
+      this.drawStats();
+    }
     this.cameras.main.fadeOut(350, 0, 0, 0);
     this.run.s++;
     this.cameras.main.once('camerafadeoutcomplete', () => this.scene.start(isBig(this.run.s) ? 'intro' : 'pick', { run: this.run }));
