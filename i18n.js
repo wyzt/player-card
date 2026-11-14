@@ -938,6 +938,107 @@ es: { killCh: (p) => `MATAR ${p}%`, powNote: 'Rango de daño del golpe: el 80% d
 /*</es>*/
 };
 for (const l of LANGS) Object.assign(I18N[l], I18N17[l]);
+// v9: deeper builds - element affixes on armour / accessories, element roles (Fire stacks, Ice crits, Thunder counts
+// weapons) and distinct combo mechanics (Melt / Superconduct / Overload)
+const I18N18 = {
+/*<en>*/
+en: {
+  eff9: { burnT: (v) => `+${v} burn ticks (Fire)`, stack: (v) => `+${v}% burn per stack (Fire)`, critAll: (v) => `+${v}% crit chance (all weapons)`, frozenX: (v) => `+${v}% crit dmg vs frozen boss`, chainN: (v) => `+${v} chain bolts (Thunder)`, chance: (v) => `+${v}% chain chance (Thunder)` },
+  effNote9: { burnT: 'Active from Fire Lv1', stack: 'Each Fire hit = 1 stack; every burn tick ×(1 + stacks × bonus)', critAll: "Added to every weapon's crit chance (max 30%)", frozenX: 'The boss is frozen while Ice is Lv1+', chainN: 'Active from Thunder Lv1', chance: 'Active from Thunder Lv1 (max 100%)' },
+  synDesc9: { Fire: 'STACKING: every Fire hit adds a burn stack; more stacks, bigger ticks', Ice: 'CRIT: the boss is frozen, every hit is amplified, crit damage grows each Lv', Thunder: 'WEAPON COUNT: Thunder hits fork into bolts, +1 bolt per 5 weapons' },
+  synFx9: { Fire: (p, k, st) => `Fire hits burn ${p}% × ${k} ticks · +${st}%/stack`, Ice: (p, c, x) => `all hits +${p}% · Ice crit +${c}% · crit ×${x}`, Thunder: (c, n, w) => `Thunder hits: ${c}% → ${n} bolts (+${w} from weapons)` },
+  lv3_9: { Fire: 'INFERNO: +1 burn tick per Lv after 3', Ice: 'SHATTER: +4% Ice crit & +25% frostbite per Lv after 3', Thunder: 'STORM: chain bolts can crit' },
+  rw9: { Fire: (p, k) => `burn ${p}%×${k}`, Ice: (p, c, x) => `frost +${p}% crit +${c}% crit dmg +${x}×`, Thunder: (c, n) => `${c}% → ${n} bolts +1/5 weapons` },
+  comboD9: { melt: (p, m, x) => `Fire + Ice: burn ticks can CRIT (${p}%, ×${m} per combo Lv); burn crits ×${x} more per combo Lv after 1. Combo Lv = lower of the two Lv`,
+    superconduct: (b, x) => `Ice + Thunder: chain bolts vs the frozen boss ×${b}, then ×${x} per combo Lv`,
+    overload: (p, x) => `Fire + Thunder: every chain bolt adds a burn stack, and ${p}% of its damage burns (×${x} per combo Lv)` },
+  cfx9: { melt: (p, x) => `burn crit ${p}% ×${x}`, superconduct: (x) => `bolts ×${x}`, overload: (p) => `bolts burn ${p}% +stacks` },
+  synOff: 'no bonus yet (needs 3 items)',
+  stackPop: (n) => `BURN STACKS ×${n}`, scTag: 'SC',
+},
+/*</en>*/
+/*<zh>*/
+zh: {
+  eff9: { burnT: (v) => `灼烧跳数 +${v}（火）`, stack: (v) => `每层灼烧 +${v}%（火）`, critAll: (v) => `所有武器暴击率 +${v}%`, frozenX: (v) => `对冰冻 Boss 暴击伤害 +${v}%`, chainN: (v) => `连锁闪电 +${v} 道（雷）`, chance: (v) => `连锁几率 +${v}%（雷）` },
+  effNote9: { burnT: '火焰 Lv1 起生效', stack: '每次火焰命中叠 1 层；每跳灼烧 ×（1 + 层数 × 加成）', critAll: '加到每把武器的暴击率上（上限 30%）', frozenX: '冰霜 Lv1 起 Boss 处于冰冻状态', chainN: '雷电 Lv1 起生效', chance: '雷电 Lv1 起生效（上限 100%）' },
+  synDesc9: { Fire: '叠层：每次火焰命中叠 1 层灼烧，层数越多每跳越痛', Ice: '暴击：Boss 被冰冻，所有命中增伤，每级都加暴击伤害', Thunder: '武器数：雷电命中分叉成闪电，每 5 把武器 +1 道' },
+  synFx9: { Fire: (p, k, st) => `火焰命中灼烧 ${p}% × ${k} 跳 · 每层 +${st}%`, Ice: (p, c, x) => `所有命中 +${p}% · 冰霜暴击 +${c}% · 暴伤 ×${x}`, Thunder: (c, n, w) => `雷电命中：${c}% → ${n} 道闪电（武器 +${w}）` },
+  lv3_9: { Fire: '炼狱：3 级后每级 +1 跳灼烧', Ice: '碎冰：3 级后每级冰霜暴击 +4%、承伤 +25%', Thunder: '风暴：连锁闪电也能暴击' },
+  rw9: { Fire: (p, k) => `灼烧 ${p}%×${k}`, Ice: (p, c, x) => `冰冻 +${p}% · 暴击 +${c}% · 暴伤 +${x}倍`, Thunder: (c, n) => `${c}% → ${n} 道闪电 +武器数/5` },
+  comboD9: { melt: (p, m, x) => `火 + 冰：灼烧可以暴击（${p}%，组合每级 ×${m}）；2 级起灼烧暴击伤害每级再 ×${x}。组合等级 = 两者较低等级`,
+    superconduct: (b, x) => `冰 + 雷：连锁闪电打冰冻 Boss ×${b}，组合每级再 ×${x}`,
+    overload: (p, x) => `火 + 雷：每道连锁闪电叠 1 层灼烧，并把 ${p}% 闪电伤害加入灼烧（组合每级 ×${x}）` },
+  cfx9: { melt: (p, x) => `灼烧暴击 ${p}% ×${x}`, superconduct: (x) => `闪电 ×${x}`, overload: (p) => `闪电 ${p}% 入灼烧 +层` },
+  synOff: '暂无加成（需要 3 件）',
+  stackPop: (n) => `灼烧 ${n} 层`, scTag: '超导',
+},
+/*</zh>*/
+/*<ja>*/
+ja: {
+  eff9: { burnT: (v) => `燃焼回数 +${v}（火）`, stack: (v) => `燃焼スタックごと +${v}%（火）`, critAll: (v) => `全武器の会心率 +${v}%`, frozenX: (v) => `凍結ボスへの会心ダメージ +${v}%`, chainN: (v) => `連鎖の稲妻 +${v}本（雷）`, chance: (v) => `連鎖確率 +${v}%（雷）` },
+  effNote9: { burnT: '火 Lv1 から有効', stack: '火のヒット1回 = 1スタック。燃焼1回ごと ×（1 + スタック × ボーナス）', critAll: '全武器の会心率に加算（最大30%）', frozenX: '氷 Lv1 以上でボスは凍結状態', chainN: '雷 Lv1 から有効', chance: '雷 Lv1 から有効（最大100%）' },
+  synDesc9: { Fire: 'スタック：火のヒットごとに燃焼が1層積もり、層が多いほど燃焼が強い', Ice: '会心：ボスを凍結、全ヒット増幅、Lvごとに会心ダメージ上昇', Thunder: '武器数：雷のヒットが稲妻に分岐、武器5本ごとに +1本' },
+  synFx9: { Fire: (p, k, st) => `火のヒットの ${p}% を ${k} 回燃焼 · 1層 +${st}%`, Ice: (p, c, x) => `全ヒット +${p}% · 氷の会心 +${c}% · 会心 ×${x}`, Thunder: (c, n, w) => `雷のヒット：${c}% で稲妻 ${n} 本（武器 +${w}）` },
+  lv3_9: { Fire: '業火：Lv3 以降 Lvごとに燃焼 +1 回', Ice: '粉砕：Lv3 以降 Lvごとに氷の会心 +4%・被ダメ +25%', Thunder: '嵐：連鎖の稲妻も会心する' },
+  rw9: { Fire: (p, k) => `燃焼 ${p}%×${k}`, Ice: (p, c, x) => `凍結 +${p}% · 会心 +${c}% · 会心ダメ +${x}倍`, Thunder: (c, n) => `${c}% → 稲妻${n}本 +武器5本ごと1` },
+  comboD9: { melt: (p, m, x) => `火 + 氷：燃焼が会心する（${p}%、コンボLvごとに ×${m}）。燃焼の会心は Lv2 から Lvごとに さらに×${x}。コンボLv = 低い方のLv`,
+    superconduct: (b, x) => `氷 + 雷：凍結ボスへの連鎖の稲妻 ×${b}、コンボLvごとに ×${x}`,
+    overload: (p, x) => `火 + 雷：稲妻1本ごとに燃焼 +1層、稲妻ダメージの ${p}% も燃える（コンボLvごとに ×${x}）` },
+  cfx9: { melt: (p, x) => `燃焼会心 ${p}% ×${x}`, superconduct: (x) => `稲妻 ×${x}`, overload: (p) => `稲妻 ${p}% 燃焼 +層` },
+  synOff: 'ボーナスなし（3個必要）',
+  stackPop: (n) => `燃焼 ${n}層`, scTag: '超電導',
+},
+/*</ja>*/
+/*<ko>*/
+ko: {
+  eff9: { burnT: (v) => `화상 횟수 +${v} (불)`, stack: (v) => `화상 중첩당 +${v}% (불)`, critAll: (v) => `모든 무기 치명타 확률 +${v}%`, frozenX: (v) => `빙결 보스에 치명타 피해 +${v}%`, chainN: (v) => `연쇄 번개 +${v}개 (번개)`, chance: (v) => `연쇄 확률 +${v}% (번개)` },
+  effNote9: { burnT: '불 Lv1부터 적용', stack: '불 타격 1회 = 1중첩. 화상 1회마다 ×(1 + 중첩 × 보너스)', critAll: '모든 무기의 치명타 확률에 더해짐 (최대 30%)', frozenX: '얼음 Lv1 이상이면 보스가 빙결 상태', chainN: '번개 Lv1부터 적용', chance: '번개 Lv1부터 적용 (최대 100%)' },
+  synDesc9: { Fire: '중첩: 불 타격마다 화상 1중첩, 중첩이 많을수록 화상이 강해짐', Ice: '치명타: 보스 빙결, 모든 타격 증폭, Lv마다 치명타 피해 증가', Thunder: '무기 수: 번개 타격이 번개로 갈라짐, 무기 5개마다 +1개' },
+  synFx9: { Fire: (p, k, st) => `불 타격의 ${p}% × ${k}회 화상 · 중첩당 +${st}%`, Ice: (p, c, x) => `모든 타격 +${p}% · 얼음 치명 +${c}% · 치명 ×${x}`, Thunder: (c, n, w) => `번개 타격: ${c}% → 번개 ${n}개 (무기 +${w})` },
+  lv3_9: { Fire: '연옥: Lv3 이후 Lv마다 화상 +1회', Ice: '산산조각: Lv3 이후 Lv마다 얼음 치명 +4%, 받는 피해 +25%', Thunder: '폭풍: 연쇄 번개도 치명타' },
+  rw9: { Fire: (p, k) => `화상 ${p}%×${k}`, Ice: (p, c, x) => `빙결 +${p}% · 치명 +${c}% · 치명 피해 +${x}배`, Thunder: (c, n) => `${c}% → 번개 ${n}개 +무기 5개당 1` },
+  comboD9: { melt: (p, m, x) => `불 + 얼음: 화상이 치명타 가능 (${p}%, 콤보 Lv마다 ×${m}). 화상 치명타는 Lv2부터 Lv마다 ×${x} 더. 콤보 Lv = 둘 중 낮은 Lv`,
+    superconduct: (b, x) => `얼음 + 번개: 빙결 보스에 연쇄 번개 ×${b}, 콤보 Lv마다 ×${x}`,
+    overload: (p, x) => `불 + 번개: 번개 1개마다 화상 +1중첩, 번개 피해의 ${p}%도 화상 (콤보 Lv마다 ×${x})` },
+  cfx9: { melt: (p, x) => `화상 치명 ${p}% ×${x}`, superconduct: (x) => `번개 ×${x}`, overload: (p) => `번개 ${p}% 화상 +중첩` },
+  synOff: '보너스 없음 (3개 필요)',
+  stackPop: (n) => `화상 ${n}중첩`, scTag: '초전도',
+},
+/*</ko>*/
+/*<pt>*/
+pt: {
+  eff9: { burnT: (v) => `+${v} tiques de queima (Fogo)`, stack: (v) => `+${v}% de queima por acúmulo (Fogo)`, critAll: (v) => `+${v}% de crítico (todas as armas)`, frozenX: (v) => `+${v}% dano crítico vs chefão congelado`, chainN: (v) => `+${v} raios em cadeia (Trovão)`, chance: (v) => `+${v}% chance de cadeia (Trovão)` },
+  effNote9: { burnT: 'Ativo a partir de Fogo Nv1', stack: 'Cada golpe de Fogo = 1 acúmulo; cada tique ×(1 + acúmulos × bônus)', critAll: 'Somado ao crítico de cada arma (máx. 30%)', frozenX: 'O chefão fica congelado com Gelo Nv1+', chainN: 'Ativo a partir de Trovão Nv1', chance: 'Ativo a partir de Trovão Nv1 (máx. 100%)' },
+  synDesc9: { Fire: 'ACÚMULO: cada golpe de Fogo soma um acúmulo de queima; mais acúmulos, tiques maiores', Ice: 'CRÍTICO: chefão congelado, todo golpe amplificado, dano crítico sobe a cada Nv', Thunder: 'Nº DE ARMAS: golpes de Trovão viram raios, +1 raio a cada 5 armas' },
+  synFx9: { Fire: (p, k, st) => `golpes de Fogo queimam ${p}% × ${k} · +${st}%/acúmulo`, Ice: (p, c, x) => `todos os golpes +${p}% · crít. Gelo +${c}% · crít ×${x}`, Thunder: (c, n, w) => `golpes de Trovão: ${c}% → ${n} raios (+${w} das armas)` },
+  lv3_9: { Fire: 'INFERNO: +1 tique por Nv após o 3', Ice: 'ESTILHAÇAR: +4% crít. Gelo e +25% congelamento por Nv após o 3', Thunder: 'TEMPESTADE: raios em cadeia podem critar' },
+  rw9: { Fire: (p, k) => `queima ${p}%×${k}`, Ice: (p, c, x) => `gelo +${p}% · crít +${c}% · dano crít +${x}×`, Thunder: (c, n) => `${c}% → ${n} raios +1/5 armas` },
+  comboD9: { melt: (p, m, x) => `Fogo + Gelo: a queima pode CRITAR (${p}%, ×${m} por Nv do combo); crítico da queima ×${x} a mais por Nv após o 1. Nv do combo = o menor dos dois`,
+    superconduct: (b, x) => `Gelo + Trovão: raios em cadeia vs chefão congelado ×${b}, e ×${x} por Nv do combo`,
+    overload: (p, x) => `Fogo + Trovão: cada raio soma um acúmulo de queima, e ${p}% do dano dele queima (×${x} por Nv do combo)` },
+  cfx9: { melt: (p, x) => `crít. queima ${p}% ×${x}`, superconduct: (x) => `raios ×${x}`, overload: (p) => `raios queimam ${p}% +acúm.` },
+  synOff: 'sem bônus ainda (precisa de 3 itens)',
+  stackPop: (n) => `QUEIMA ×${n} ACÚMULOS`, scTag: 'SC',
+},
+/*</pt>*/
+/*<es>*/
+es: {
+  eff9: { burnT: (v) => `+${v} tics de quemadura (Fuego)`, stack: (v) => `+${v}% de quemadura por carga (Fuego)`, critAll: (v) => `+${v}% prob. de crítico (todas las armas)`, frozenX: (v) => `+${v}% daño crítico vs jefe congelado`, chainN: (v) => `+${v} rayos en cadena (Trueno)`, chance: (v) => `+${v}% prob. de cadena (Trueno)` },
+  effNote9: { burnT: 'Activo desde Fuego Nv1', stack: 'Cada golpe de Fuego = 1 carga; cada tic ×(1 + cargas × bono)', critAll: 'Se suma al crítico de cada arma (máx. 30%)', frozenX: 'El jefe está congelado con Hielo Nv1+', chainN: 'Activo desde Trueno Nv1', chance: 'Activo desde Trueno Nv1 (máx. 100%)' },
+  synDesc9: { Fire: 'CARGAS: cada golpe de Fuego suma una carga de quemadura; más cargas, tics más fuertes', Ice: 'CRÍTICO: jefe congelado, todo golpe amplificado, el daño crítico sube cada Nv', Thunder: 'Nº DE ARMAS: los golpes de Trueno se bifurcan en rayos, +1 rayo cada 5 armas' },
+  synFx9: { Fire: (p, k, st) => `golpes de Fuego queman ${p}% × ${k} · +${st}%/carga`, Ice: (p, c, x) => `todos los golpes +${p}% · crít. Hielo +${c}% · crít ×${x}`, Thunder: (c, n, w) => `golpes de Trueno: ${c}% → ${n} rayos (+${w} por armas)` },
+  lv3_9: { Fire: 'INFIERNO: +1 tic por Nv tras el 3', Ice: 'ESTALLIDO: +4% crít. Hielo y +25% congelación por Nv tras el 3', Thunder: 'TORMENTA: los rayos en cadena pueden ser críticos' },
+  rw9: { Fire: (p, k) => `quema ${p}%×${k}`, Ice: (p, c, x) => `hielo +${p}% · crít +${c}% · daño crít +${x}×`, Thunder: (c, n) => `${c}% → ${n} rayos +1/5 armas` },
+  comboD9: { melt: (p, m, x) => `Fuego + Hielo: la quemadura puede ser CRÍTICA (${p}%, ×${m} por Nv del combo); sus críticos ×${x} más por Nv tras el 1. Nv del combo = el menor de los dos`,
+    superconduct: (b, x) => `Hielo + Trueno: rayos en cadena vs jefe congelado ×${b}, y ×${x} por Nv del combo`,
+    overload: (p, x) => `Fuego + Trueno: cada rayo suma una carga de quemadura y ${p}% de su daño quema (×${x} por Nv del combo)` },
+  cfx9: { melt: (p, x) => `crít. quema ${p}% ×${x}`, superconduct: (x) => `rayos ×${x}`, overload: (p) => `rayos queman ${p}% +cargas` },
+  synOff: 'sin bono aún (necesita 3 objetos)',
+  stackPop: (n) => `QUEMADURA ×${n} CARGAS`, scTag: 'SC',
+},
+/*</es>*/
+};
+for (const l of LANGS) Object.assign(I18N[l], I18N18[l]);
 const NOUN_KEYS = ['Sword', 'Dagger', 'Mace', 'Bow', 'Axe', 'Blade', 'Staff', 'Spear', 'Armor', 'Boots', 'Helm', 'Amulet', 'Ring', 'Pendant', 'Medal', 'Talisman', 'Relic', 'Idol', 'Grimoire', 'Shard'];
 const CJK_FONT = { zh: 'FusionZH', ja: 'FusionJA', ko: 'FusionKO' };
 function detectLang() {

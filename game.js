@@ -4,7 +4,7 @@
 // Gear STACKS FOREVER. Every weapon hits on its own with its own crit chance; armour & accessories never crit, they add
 // order-independent effects (element %, crit damage, combo, execute line, echo, greed, overkill conversion).
 const RULES = {
-  hp0: 28, hpGrowth: 3.05, hpStart: 2.9, hpRamp: 3, hpCurve: 0.003, // boss HP at stage s (0-based) = hp0 * hpGrowth^s * e^(hpCurve*s^2): gentle start, steeper later
+  hp0: 28, hpGrowth: 2.65, hpStart: 2.4, hpRamp: 10, hpCurve: 0.008, // boss HP at stage s (0-based) = hp0 * hpGrowth^s * e^(hpCurve*s^2): gentle start, steeper later
   bigEvery: 5, bigHp: 1.4, bigRank: 1.6, // BIG BOSS: x1.4 HP; its chests roll rarity as if stage were x1.6 further
   lootGrowth: 1.3,                 // weapon damage of loot found at stage s is x lootGrowth^s
   // rarity: White, Green, Blue, Purple, Gold, Legendary - power multiplier and base weights; higher ranks get likelier with stage
@@ -17,7 +17,13 @@ const RULES = {
     combo: [0.005, 0.008, 0.012, 0.016, 0.022, 0.03], execute: [0.02, 0.025, 0.03, 0.04, 0.05, 0.07] },
   accessory: { stats: ['glob', 'echo', 'greed', 'okConv'],
     glob: [0.1, 0.15, 0.22, 0.3, 0.42, 0.6], echo: [0.04, 0.05, 0.07, 0.09, 0.12, 0.16], greed: [0.1, 0.14, 0.2, 0.26, 0.33, 0.45], okConv: [0.01, 0.015, 0.02, 0.03, 0.04, 0.06] },
-  caps: { execute: 0.2, echo: 0.6, greed: 0.8 },
+  caps: { execute: 0.2, echo: 0.6, greed: 0.8, chance: 1, critAll: 0.3 },
+  // v9 ELEMENT AFFIXES: an armour / accessory rolls an affix of ITS element (instead of a generic stat) with chance `chance`.
+  // Fire armour: burn ticks +n; Fire accessory: burn stack +x per stack. Ice armour: crit chance +x for ALL weapons;
+  // Ice accessory: crit damage x(1+v) vs a FROZEN boss (Ice Lv1+). Thunder armour: chain bolts +n; Thunder accessory: chain chance +x.
+  affix: { chance: 0.45,
+    armor: { Fire: ['burnT', [1, 1, 1, 2, 2, 3]], Ice: ['critAll', [0.02, 0.03, 0.04, 0.05, 0.07, 0.1]], Thunder: ['chainN', [1, 1, 1, 2, 2, 3]] },
+    accessory: { Fire: ['stack', [0.01, 0.015, 0.02, 0.03, 0.04, 0.06]], Ice: ['frozenX', [0.15, 0.22, 0.3, 0.4, 0.6, 1.0]], Thunder: ['chance', [0.05, 0.07, 0.1, 0.13, 0.17, 0.25]] } },
   // DARK chest: replaces one of the 3 sometimes; random element, rarity shifted up, may hold a CURSED item
   dark: { chance: 0.25, from: 2, shift: 1.9, curse: 0.3 },   // v8.3: curses now expire, no purify gems -> a bit less curse, a bit more loot
   curse: { kinds: { weapon: ['drain'], armor: ['critDown', 'seal'], accessory: ['weak', 'hpUp'] }, kindW: [0.4, 0.3, 0.3],
@@ -27,18 +33,25 @@ const RULES = {
   critX: 2,
   // ELEMENTS: every 3 same-element items = +1 Lv (no cap); Lv1-3 add qualitative upgrades, every Lv adds MASTERY
   elem: {
-    // FIRE: your Fire hits keep burning (x% of the Fire hits per tick). Lv3 INFERNO: +1 tick per 3 extra Fire items
-    Fire: { burn: [0, 0.3, 0.7, 1.5], ticks: [0, 3, 4, 6] },
-    // ICE: frostbite amplifies EVERY hit; Ice weapons crit more. Lv3 SHATTER: +1x crit damage for everything
-    Ice: { vuln: [1, 1.3, 1.8, 3.0], crit: [0, 0.1, 0.2, 0.35], shatter: 1 },
-    // THUNDER: each Thunder hit may fork into chain bolts. Lv3 STORM: chain bolts can crit
-    Thunder: { chance: [0, 0.4, 0.6, 0.8], chains: [0, 2, 4, 7], bolt: 0.8 },
+    // v9 FIRE = STACKING: every Fire hit adds a burn STACK; each burn tick = (Fire hits) x burn% x (1 + stack x stacks).
+    // More Fire hits -> more base AND more stacks (grows ~ quadratically with Fire weapons). Lv4+: +1 tick per Lv
+    Fire: { burn: [0, 0.3, 0.6, 1.0], ticks: [0, 3, 4, 5], stack: 0.04 },
+    // v9 ICE = CRIT: the boss is FROZEN (Ice Lv1+); frostbite amplifies every hit; Ice weapons crit more; every Ice Lv adds
+    // crit damage for ALL hits (the steepest crit growth)
+    Ice: { vuln: [1, 1.3, 1.8, 3.0], vulnLv: 0.25, crit: [0, 0.15, 0.25, 0.4], critLv: 0.04, critDmg: 0.7 },
+    // v9 THUNDER = WEAPON COUNT: each Thunder hit may fork into chain bolts; +1 bolt for every `perW` weapons you own
+    // (guaranteed-weapon chests matter). Lv3 STORM: chain bolts can crit
+    Thunder: { chance: [0, 0.4, 0.6, 0.8], chains: [0, 2, 3, 4], perW: 5, bolt: 0.8 },
     // MASTERY: weapons of an element hit x2 harder per Lv of that element (compounding: what you STACK is the build)
     step: 3, mastery: 2 },
   // DUAL COMBOS when two elements are both Lv1+: MELT (Fire+Ice) burn x3, SUPERCONDUCT (Ice+Thunder) crit damage x2,
   // OVERLOAD (Fire+Thunder) an explosion of 35% of all hits
   // each combo's power grows with the LOWER level of its two elements: base x per^(lv-1)
-  combos: { res: 3, melt: { base: 4, per: 1.6 }, superconduct: { base: 2.5, per: 1.4 }, overload: { base: 1, per: 1.5 } },
+  // v9 COMBOS: distinct mechanics (no flat multiplier). Level = the LOWER level of the two elements; value = base x per^(lv-1)
+  //  MELT (Fire+Ice): burn ticks can CRIT (chance), with your full crit damage x x^(lv-1)
+  //  SUPERCONDUCT (Ice+Thunder): chain bolts vs the frozen boss x mult
+  //  OVERLOAD (Fire+Thunder): every chain bolt adds a burn stack, and x% of its (raw) damage joins the burn base
+  combos: { melt: { base: 0.3, per: 1.25, cap: 0.95, x: 2.5 }, superconduct: { base: 3, per: 2.5 }, overload: { base: 0.5, per: 2.5 } },
   // HIGH QUALITY chests: some normal chests shimmer - better rarity odds (not a guarantee)
   hq: { chance: 0.25, shift: 1.6 },
   // TYPE TAG: in ~20% of rounds ONE normal chest promises its item type (weapon rarer than armour / accessory); rarity still
@@ -48,7 +61,7 @@ const RULES = {
   bonus: { minor: false, chestAt: 3, jackpotAt: 8, okBase: 0.8, okPer: 0.3, okMax: 2.4 },
   milestone: 5,
   firstWeapons: 2,
-  smart: { hq: 7, logCap: 0, tight: 1.5, w: 50, dark: 3, darkCursed: -8 },   // sim-only weights of the 'smart' pick policy
+  smart: { hq: 7, logCap: 0, tight: 1.5, w: 50, dark: 3, darkCursed: -8, look: 8, switchK: 1.2, from: 8 },   // sim-only weights of the 'smart' pick policy
   variants: { weapon: 5, armor: 2, accessory: 2, cursed: 4 },
   cap: 1e300,
 };
@@ -92,8 +105,8 @@ function mkWeapon(el, rank, s, rng) {
     lo: capN(k * (1 - W.spread)), hi: capN(k * (1 + W.spread)), crit: Math.round((W.crit[rank] + (rng() - 0.5) * 0.02) * 100) / 100 };
 }
 function mkGear(kind, el, rank, s, rng) {
-  const P = RULES[kind], stat = pick(rng, P.stats);
-  return { id: UID++, kind, element: el, v: ri(rng, 0, RULES.variants[kind] - 1), stage: s, rank, rarity: RANKS[rank], stat, val: P[stat][rank] };
+  const P = RULES[kind], A = RULES.affix[kind][el], aff = rng() < RULES.affix.chance, stat = aff ? A[0] : pick(rng, P.stats);
+  return { id: UID++, kind, element: el, v: ri(rng, 0, RULES.variants[kind] - 1), stage: s, rank, rarity: RANKS[rank], stat, val: aff ? A[1][rank] : P[stat][rank], affix: aff || undefined };
 }
 function mkCurse(el, s, rng) {
   const C = RULES.curse, x = rng(), kind = x < C.kindW[0] ? 'weapon' : x < C.kindW[0] + C.kindW[1] ? 'armor' : 'accessory';
@@ -144,55 +157,63 @@ function elemLv(list) {
   return { cnt, lv };
 }
 // every number a strike uses, from the active (non-sealed) gear list. Pure sums / products -> order-independent.
+const AFFIX_KEYS = ['burnT', 'stack', 'critAll', 'frozenX', 'chainN', 'chance'];
 function stats(list) {
   const E = RULES.elem, C = RULES.combos, { cnt, lv } = elemLv(list);
-  const S = { cnt, lv, glob: 1, elemB: { Fire: 0, Ice: 0, Thunder: 0 }, critX: RULES.critX, combo: 0, execute: 0, echo: 0, greed: 0, okConv: 0 };
+  const S = { cnt, lv, glob: 1, elemB: { Fire: 0, Ice: 0, Thunder: 0 }, critX: RULES.critX, combo: 0, execute: 0, echo: 0, greed: 0, okConv: 0, nW: 0 };
+  const X = { burnT: 0, stack: 0, critAll: 0, frozenX: 0, chainN: 0, chance: 0 };
   list.forEach((it) => {
     if (it.cursed) { if (it.curse === 'critDown') S.critX -= RULES.curse.critDown; return; }
-    if (it.kind === 'weapon') return;
-    if (it.stat === 'elemB') S.elemB[it.element] += it.val; else if (it.stat === 'glob') S.glob += it.val; else S[it.stat] += it.val;
+    if (it.kind === 'weapon') { S.nW++; return; }
+    if (it.stat === 'elemB') S.elemB[it.element] += it.val; else if (it.stat === 'glob') S.glob += it.val; else if (X[it.stat] !== undefined) X[it.stat] += it.val; else S[it.stat] += it.val;
   });
+  S.aff = X;
   S.execute = Math.min(RULES.caps.execute, S.execute); S.echo = Math.min(RULES.caps.echo, S.echo); S.greed = Math.min(RULES.caps.greed, S.greed);
-  const L3 = (x) => Math.min(3, x);
-  S.burn = E.Fire.burn[L3(lv.Fire)]; S.burnT = E.Fire.ticks[L3(lv.Fire)] + Math.max(0, lv.Fire - 3);
-  S.vuln = E.Ice.vuln[L3(lv.Ice)] * (lv.Ice > 3 ? 1 + 0.25 * (lv.Ice - 3) : 1); S.critUp = E.Ice.crit[L3(lv.Ice)]; if (lv.Ice >= 3) S.critX += E.Ice.shatter;
-  S.chance = E.Thunder.chance[L3(lv.Thunder)]; S.chains = E.Thunder.chains[L3(lv.Thunder)] + Math.max(0, lv.Thunder - 3); S.bolt = E.Thunder.bolt; S.storm = lv.Thunder >= 3;
+  const L3 = (x) => Math.min(3, x), up = (l) => Math.max(0, l - 3);
+  // FIRE: burn % per tick, ticks (+1 per Lv above 3, + Fire armour), stack bonus per stack (+ Fire accessories)
+  S.burn = E.Fire.burn[L3(lv.Fire)]; S.burnT = lv.Fire ? E.Fire.ticks[L3(lv.Fire)] + up(lv.Fire) + X.burnT : 0; S.stackK = lv.Fire ? E.Fire.stack + X.stack : 0;
+  // ICE: frozen boss, frostbite (+25% per Lv above 3), Ice weapons crit +x, every Ice Lv +crit damage for all hits
+  S.frozen = lv.Ice >= 1;
+  S.vuln = E.Ice.vuln[L3(lv.Ice)] * (1 + E.Ice.vulnLv * up(lv.Ice)); S.critUp = lv.Ice ? E.Ice.crit[L3(lv.Ice)] + E.Ice.critLv * up(lv.Ice) : 0;
+  S.critAll = Math.min(RULES.caps.critAll, X.critAll);
+  S.critX += E.Ice.critDmg * lv.Ice;
+  // THUNDER: chance (+ Thunder accessories), bolts = Lv bolts + 1 per perW weapons (+ Thunder armour), Lv3 STORM
+  S.chance = lv.Thunder ? Math.min(RULES.caps.chance, E.Thunder.chance[L3(lv.Thunder)] + X.chance) : 0;
+  S.chainW = Math.floor(S.nW / E.Thunder.perW);
+  S.chains = lv.Thunder ? E.Thunder.chains[L3(lv.Thunder)] + up(lv.Thunder) + S.chainW + X.chainN : 0; S.bolt = E.Thunder.bolt; S.storm = lv.Thunder >= 3;
   // combo level = the lower of its two element levels (0 = off)
   S.melt = Math.min(lv.Fire, lv.Ice); S.superconduct = Math.min(lv.Ice, lv.Thunder); S.overload = Math.min(lv.Fire, lv.Thunder);
   const M = (l) => Math.pow(E.mastery, l);   // MASTERY: x per level of that element, compounding -> stacking one element snowballs
   S.mastery = { Fire: M(lv.Fire), Ice: M(lv.Ice), Thunder: M(lv.Thunder) };
-  // combos grow with the lower level of their two elements
-  S.burn *= S.melt ? C.melt.base * Math.pow(C.melt.per, S.melt - 1) : 1;
-  S.critX *= S.superconduct ? C.superconduct.base * Math.pow(C.superconduct.per, S.superconduct - 1) : 1;
-  S.boom = S.overload ? C.overload.base * Math.pow(C.overload.per, S.overload - 1) : 0;
-  // RESONANCE: hits of a combo's two elements are x res^(combo Lv); a hit takes only its BEST combo (pairs, not spreading, win)
-  S.comboMul = { Fire: 1, Ice: 1, Thunder: 1 };
-  [['melt', 'Fire', 'Ice'], ['superconduct', 'Ice', 'Thunder'], ['overload', 'Fire', 'Thunder']].forEach(([k, a, b]) => {
-    const v = S[k] ? Math.pow(C.res, S[k]) : 1; S.comboMul[a] = Math.max(S.comboMul[a], v); S.comboMul[b] = Math.max(S.comboMul[b], v); });
-  S.critX = Math.max(1, S.critX);
+  const cv = (k) => S[k] ? C[k].base * Math.pow(C[k].per, S[k] - 1) : 0;
+  S.meltP = Math.min(C.melt.cap, cv('melt'));   // MELT: burn tick crit chance
+  S.scX = S.superconduct ? cv('superconduct') : 1;   // SUPERCONDUCT: chain bolt multiplier
+  S.olK = cv('overload');   // OVERLOAD: share of chain damage that joins the burn base (+1 stack per bolt)
+  S.critX = Math.max(1, S.critX) * (S.frozen ? 1 + X.frozenX : 1);   // Ice accessory: crit damage vs the frozen boss
+  S.meltX = S.melt ? S.critX * Math.pow(C.melt.x, S.melt - 1) : 1;   // MELT: a burn crit deals x critX x x^(lv-1)
   return S;
 }
-const critOf = (it, S) => it && it.cursed ? 0 : Math.min(0.95, (it ? it.crit : RULES.hero.crit) + (it && it.element === 'Ice' ? S.critUp : 0));
+const critOf = (it, S) => it && it.cursed ? 0 : Math.min(0.95, (it ? it.crit : RULES.hero.crit) + (it ? S.critAll : 0) + (it && it.element === 'Ice' ? S.critUp : 0));
 const isEl = (it, e) => !!it && !it.cursed && it.element === e;
 function hitters(G) {
   const off = offEls(G), list = G.items.filter((it) => it.cursed || !off.includes(it.element)), S = stats(list); S.weakM = weakMult(G);
   return { list, S, weapons: list.filter((it) => it.kind === 'weapon') };
 }
-const hitMul = (it, S, G, B) => (S.glob + G.perm) * (it && !it.cursed ? (1 + S.elemB[it.element]) * S.mastery[it.element] * S.comboMul[it.element] : 1) * S.vuln * (S.weakM !== undefined ? S.weakM : weakMult(G));   // PERF: weakM cached by hitters()
+const hitMul = (it, S, G, B) => (S.glob + G.perm) * (it && !it.cursed ? (1 + S.elemB[it.element]) * S.mastery[it.element] : 1) * S.vuln * (S.weakM !== undefined ? S.weakM : weakMult(G));   // PERF: weakM cached by hitters()
 // hero POWER: expected total damage of a strike vs boss B (curses included) - an expectation, not a guarantee
 function expStrike(G, B = null, s = 0) {
   const { S, weapons } = hitters(G), good = weapons.filter((w) => !w.cursed);
   const nH = 1 + good.length * (1 + S.echo) + (weapons.length - good.length), cm = 1 + S.combo * (nH - 1);
-  const chainK = 1 + S.chance * S.chains * S.bolt;
-  let sum = 0, fire = 0;
+  let sum = 0, fire = 0, nF = 0, chain = 0, bolts = 0;
   [null, ...weapons].forEach((it) => {
-    const base = it ? eAvg(it) : heroAtk(s), p = critOf(it, S);
-    let v = base * hitMul(it, S, G, B) * cm * (1 + p * (S.critX - 1)) * (it && !it.cursed ? 1 + S.echo : 1);
-    if (isEl(it, 'Thunder')) v *= chainK;
-    sum += v; if (isEl(it, 'Fire')) fire += v;
+    const base = it ? eAvg(it) : heroAtk(s), p = critOf(it, S), e = it && !it.cursed ? 1 + S.echo : 1, k = base * hitMul(it, S, G, B) * cm * e;
+    const v = k * (1 + p * (S.critX - 1));
+    sum += v; if (isEl(it, 'Fire')) { fire += v; nF += e; }
+    if (isEl(it, 'Thunder') && S.chains) { const c = k * S.chance * S.chains * S.bolt * S.scX * (S.storm ? 1 + p * (S.critX - 1) : 1); chain += c; bolts += e * S.chance * S.chains; }
   });
-  sum = Math.max(0, sum);
-  return capN(sum * (1 + S.boom) + Math.max(0, fire) * S.burn * S.burnT);
+  sum = Math.max(0, sum + chain);
+  const burn = S.burn > 0 ? Math.max(0, fire + S.olK * chain / S.scX) * S.burn * (1 + S.stackK * (nF + (S.olK ? bolts : 0))) * S.burnT * (1 + S.meltP * (S.meltX - 1)) : 0;
+  return capN(sum + burn);
 }
 // returns what happened, for the UI: { type: 'add' | 'curse', item, n }
 function equip(G, it) {
@@ -207,26 +228,32 @@ function tickCurses(G) {
   return gone;
 }
 function rollItem(it, rng) { return it.lo === it.hi ? it.lo : rng ? it.lo + rng() * (it.hi - it.lo) : (it.lo + it.hi) / 2; }
-// the strike vs boss B at stage s: hero + every weapon (+ echoes) hit on their own; chains, overload, burn; execute line
+// the strike vs boss B at stage s: hero + every weapon (+ echoes) hit on their own; chain bolts (x SUPERCONDUCT), burn with
+// stacks (+ OVERLOAD bolts), burn ticks that can crit (MELT); execute line. All sums -> order-independent.
 function computeDamage(G, rng, s = 0) {
   const B = bossEl(s), { list, S, weapons } = hitters(G), off = offEls(G), hp = stageHp(s, G);
   const seq = [null]; weapons.forEach((w) => { seq.push(w); if (!w.cursed && S.echo > 0 && rng && rng() < S.echo) seq.push({ echo: true, src: w }); });
   const nH = seq.length, cm = 1 + S.combo * (nH - 1);
-  const hits = []; let sum = 0, fire = 0, crits = 0, chained = 0, echoes = 0;
+  const hits = []; let sum = 0, fire = 0, crits = 0, chained = 0, echoes = 0, nF = 0, chainSum = 0, bolts = 0;
   seq.forEach((h0) => {
     const it = h0 && h0.echo ? h0.src : h0; if (h0 && h0.echo) echoes++;
     const roll = it ? rollItem(it, rng) : heroAtk(s);
     const crit = !!rng && rng() < critOf(it, S);
     const v = capN(roll * hitMul(it, S, G, B) * cm * (crit ? S.critX : 1));
-    const ch = rng && isEl(it, 'Thunder') && S.chance > 0 && rng() < S.chance ? S.chains : 0;
-    const bc = S.storm && rng && rng() < critOf(it, S) ? S.critX : 1, cv = capN(v / (crit ? S.critX : 1) * S.bolt * ch * bc);
-    hits.push({ it, echo: !!(h0 && h0.echo), v, crit, chain: ch, cv }); sum = capN(Math.max(0, sum + v + cv)); if (isEl(it, 'Fire')) fire = capN(fire + v); if (crit) crits++; if (ch) chained++;
+    const ch = rng && isEl(it, 'Thunder') && S.chains > 0 && rng() < S.chance ? S.chains : 0;
+    const bc = S.storm && rng && rng() < critOf(it, S) ? S.critX : 1, cv = capN(v / (crit ? S.critX : 1) * S.bolt * ch * bc * S.scX);
+    hits.push({ it, echo: !!(h0 && h0.echo), v, crit, chain: ch, cv, sc: !!(ch && S.superconduct), bcrit: bc > 1 });
+    sum = capN(Math.max(0, sum + v + cv)); if (isEl(it, 'Fire')) { fire = capN(fire + v); nF++; } if (crit) crits++; if (ch) { chained++; bolts += ch; chainSum = capN(chainSum + cv); }
   });
-  const boom = S.boom ? capN(sum * S.boom) : 0;
-  const tick = capN(fire * S.burn), ticks = S.burn > 0 ? Array.from({ length: S.burnT }, () => tick) : [];
-  const burn = capN(tick * ticks.length), total = capN(sum + boom + burn);
+  // FIRE: stacks = Fire hits (+ chain bolts with OVERLOAD); base = Fire hits (+ OVERLOAD share of the chain damage)
+  const stacks = S.burn > 0 ? nF + (S.olK ? bolts : 0) : 0, olBase = S.olK ? capN(chainSum / S.scX * S.olK) : 0;   // OVERLOAD feeds the raw bolts (before SUPERCONDUCT)
+  const tick = S.burn > 0 ? capN(Math.max(0, fire + olBase) * S.burn * (1 + S.stackK * stacks)) : 0;
+  const ticks = [], tcrit = [];
+  for (let k = 0; S.burn > 0 && k < S.burnT; k++) { const c = !!(S.meltP && rng && rng() < S.meltP); ticks.push(c ? capN(tick * S.meltX) : tick); tcrit.push(c); }
+  const burn = capN(ticks.reduce((a, x) => a + x, 0)), total = capN(sum + burn);
   const executed = total < hp && S.execute > 0 && hp - total <= S.execute * hp;
-  return { list, S, B, off, weak: weakMult(G), hits, nH, combo: cm, crits, chained, echoes, hit: sum, boom, burn, ticks, total, hp, executed, kill: total >= hp || executed };
+  return { list, S, B, off, weak: weakMult(G), hits, nH, combo: cm, crits, chained, echoes, hit: sum, boom: 0, burn, ticks, tcrit, tick, stacks, olBase, bolts, chainSum,
+    total, hp, executed, kill: total >= hp || executed };
 }
 // after a kill: OVERKILL CONVERSION turns part of the overkill into a permanent damage bonus (capped per kill)
 function afterKill(G, r) { const S = r.S, q = r.total / r.hp; if (!(S.okConv > 0) || !(q > 1)) return 0; const g = S.okConv * Math.min(3, q - 1); G.perm += g; return g; }
@@ -244,21 +271,28 @@ const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Da
 const distKey = (G, s) => s + '|' + G.perm + '|' + G.items.length + '|' + G.items.map((it) => it.id + (it.cursed ? ':' + it.left : '')).join(',');
 function gauss(rng) { let u = 0; while (!u) u = rng(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rng()); }
 // per-state preparation, O(items): each hit's multiplier, crit chance, chain odds and its exact mean / variance
+// v9: direct part and chain part are kept apart (SUPERCONDUCT multiplies bolts, OVERLOAD feeds bolts into the burn), and
+// Fire hit / chain bolt COUNTS are tracked (burn stacks)
 function distModel(G, s) {
   const { S, weapons } = hitters(G), e = S.echo, X = S.critX;
   const hs = [null, ...weapons].map((it) => {
     const lo = it ? it.lo : heroAtk(s), hi = it ? it.hi : lo, r1 = (lo + hi) / 2, r2 = (lo * lo + lo * hi + hi * hi) / 3;
-    const K = hitMul(it, S, G, null), p = critOf(it, S), th = isEl(it, 'Thunder') && S.chance > 0, fire = isEl(it, 'Fire');
-    const C1 = 1 + p * (X - 1), C2 = 1 + p * (X * X - 1);
-    let Z1 = C1, Z2 = C2;
-    if (th) { const B1 = S.storm ? C1 : 1, B2 = S.storm ? C2 : 1, q = S.chance, c = S.chains * S.bolt, Y1 = q * c * B1, Y2 = q * c * c * B2; Z1 = C1 + Y1; Z2 = C2 + 2 * C1 * Y1 + Y2; }
-    const h1 = K * r1 * Z1, hv = Math.max(0, K * K * r2 * Z2 - h1 * h1), ec = it && !it.cursed ? e : 0;
-    return { lo, hi, K, p, th, fire, ec, m: h1 * (1 + ec), v: hv * (1 + ec) + ec * (1 - ec) * h1 * h1 };
+    const K = hitMul(it, S, G, null), p = critOf(it, S), th = isEl(it, 'Thunder') && S.chains > 0 && S.chance > 0, fire = isEl(it, 'Fire');
+    const C1 = 1 + p * (X - 1), C2 = 1 + p * (X * X - 1), ec = it && !it.cursed ? e : 0;
+    const d1 = K * r1 * C1, dv = Math.max(0, K * K * r2 * C2 - d1 * d1);
+    let c1 = 0, cvv = 0;
+    if (th) { const B1 = S.storm ? C1 : 1, B2 = S.storm ? C2 : 1, q = S.chance, c = S.chains * S.bolt * S.scX; c1 = K * r1 * q * c * B1; cvv = Math.max(0, K * K * r2 * q * c * c * B2 - c1 * c1); }
+    const tot = (m, v) => [m * (1 + ec), v * (1 + ec) + ec * (1 - ec) * m * m];
+    const [dm, dvar] = tot(d1, dv), [cm_, cvar] = tot(c1, cvv);
+    const bq = th ? S.chance * S.chains : 0, [bm, bv] = tot(bq, th ? S.chains * S.chains * S.chance * (1 - S.chance) : 0);
+    return { lo, hi, K, p, th, fire, ec, dm, dvar, cm: cm_, cvar, bm, bv, m: dm + cm_ };
   });
   const order = hs.map((h, i) => i).sort((a, b) => Math.abs(hs[b].m) - Math.abs(hs[a].m));
   const top = order.slice(0, DIST_TOP).map((i) => hs[i]), rest = order.slice(DIST_TOP).map((i) => hs[i]);
-  const R = { mF: 0, vF: 0, mO: 0, vO: 0, eM: 0, eV: 0, n: 0 };
-  rest.forEach((h) => { if (h.fire) { R.mF += h.m; R.vF += h.v; } else { R.mO += h.m; R.vO += h.v; } R.eM += h.ec; R.eV += h.ec * (1 - h.ec); R.n++; });
+  const R = { mF: 0, vF: 0, mO: 0, vO: 0, mC: 0, vC: 0, mB: 0, vB: 0, nF: 0, vnF: 0, eM: 0, eV: 0, n: 0 };
+  rest.forEach((h) => {
+    if (h.fire) { R.mF += h.dm; R.vF += h.dvar; R.nF += 1 + h.ec; R.vnF += h.ec * (1 - h.ec); } else { R.mO += h.dm; R.vO += h.dvar; }
+    R.mC += h.cm; R.vC += h.cvar; R.mB += h.bm; R.vB += h.bv; R.eM += h.ec; R.eV += h.ec * (1 - h.ec); R.n++; });
   const nBase = weapons.length;   // hits after the hero before echoes (cursed weapons hit too)
   return { S, top, R, nBase, hp: stageHp(s, G), thr: S.execute > 0 ? stageHp(s, G) * (1 - S.execute) : stageHp(s, G) };
 }
@@ -268,19 +302,27 @@ function distSample(M, rng) {
   const ech = M.top.map((h) => h.ec > 0 && rng() < h.ec);
   const eRest = R.n ? Math.max(0, Math.round(R.eM + Math.sqrt(R.eV) * gauss(rng))) : 0;
   const cm = 1 + S.combo * (M.nBase + ech.filter(Boolean).length + eRest);
-  let sum = 0, fire = 0;
+  let sum = 0, fire = 0, nF = 0, chain = 0, bolts = 0;
   const hit = (h) => {
     const roll = h.lo === h.hi ? h.lo : h.lo + rng() * (h.hi - h.lo), crit = rng() < h.p;
     const v = roll * h.K * cm * (crit ? X : 1);
-    const ch = h.th && rng() < S.chance ? S.chains : 0, bc = S.storm && rng() < h.p ? X : 1, cv = ch ? roll * h.K * cm * S.bolt * ch * bc : 0;
-    sum = Math.max(0, sum + v + cv); if (h.fire) fire += v;
+    const ch = h.th && rng() < S.chance ? S.chains : 0, bc = S.storm && rng() < h.p ? X : 1, cv = ch ? roll * h.K * cm * S.bolt * ch * bc * S.scX : 0;
+    sum = Math.max(0, sum + v + cv); if (h.fire) { fire += v; nF++; } if (ch) { chain += cv; bolts += ch; }
   };
   M.top.forEach((h, i) => { hit(h); if (ech[i]) hit(h); });
-  if (R.n) {   // the many small hits: two normal sums (scaled by this sample's combo multiplier)
-    const f = Math.max(0, R.mF + Math.sqrt(R.vF) * gauss(rng)) * cm, o = (R.mO + Math.sqrt(R.vO) * gauss(rng)) * cm;
-    sum = Math.max(0, sum + f + o); fire += f;
+  if (R.n) {   // the many small hits: normal sums (scaled by this sample's combo multiplier) + normal counts
+    const f = Math.max(0, R.mF + Math.sqrt(R.vF) * gauss(rng)) * cm, o = (R.mO + Math.sqrt(R.vO) * gauss(rng)) * cm, c = Math.max(0, R.mC + Math.sqrt(R.vC) * gauss(rng)) * cm;
+    sum = Math.max(0, sum + f + o + c); fire += f; chain += c;
+    nF += Math.max(0, R.nF + Math.sqrt(R.vnF) * gauss(rng)); bolts += Math.max(0, R.mB + Math.sqrt(R.vB) * gauss(rng));
   }
-  const total = sum * (1 + S.boom) + Math.max(0, fire) * S.burn * S.burnT;
+  let burn = 0;
+  if (S.burn > 0 && S.burnT > 0) {
+    const tick = Math.max(0, fire + S.olK * chain / S.scX) * S.burn * (1 + S.stackK * (nF + (S.olK ? bolts : 0)));
+    let nc = 0;
+    if (S.meltP) { if (S.burnT <= 64) { for (let k = 0; k < S.burnT; k++) if (rng() < S.meltP) nc++; } else nc = Math.min(S.burnT, Math.max(0, Math.round(S.burnT * S.meltP + Math.sqrt(S.burnT * S.meltP * (1 - S.meltP)) * gauss(rng)))); }
+    burn = tick * (S.burnT - nc + nc * S.meltX);
+  }
+  const total = sum + burn;
   return { total, kill: total >= M.thr };
 }
 function distStep(G, s, budget) {
@@ -303,8 +345,8 @@ const nextAt = (lv) => (lv + 1) * RULES.elem.step;
 // build focus: a PAIR of elements (most items) -> its combo RESONANCE + both masteries; ties -> fixed order
 function focusEls(S) { return [...ELEMENTS].sort((a, b) => S.cnt[b] - S.cnt[a] || ELEMENTS.indexOf(a) - ELEMENTS.indexOf(b)).slice(0, 2); }
 // value of adding one item of element el: the lagging half of the pair >> the leading half >> the third element
-function buildValue(S, el) {
-  const n = S.cnt[el], nxt = nextAt(S.lv[el]), F = focusEls(S), tot = ELEMENTS.reduce((a, e) => a + S.cnt[e], 0);
+function buildValue(S, el, F = focusEls(S)) {
+  const n = S.cnt[el], nxt = nextAt(S.lv[el]), tot = ELEMENTS.reduce((a, e) => a + S.cnt[e], 0);
   if (tot < 2) return 0;
   const o = F[0] === el ? F[1] : F[0];
   let v = F.includes(el) ? (n <= S.cnt[o] ? 16 : 10) : -8;
@@ -313,14 +355,28 @@ function buildValue(S, el) {
 }
 // smart: weighs survival this stage (expected damage with that chest's infusion + an average item) against build value,
 // HIGH QUALITY odds and dark-chest risk
+// v9 smart: picks its focus PAIR by looking ahead - which pair's next few weapons would hit hardest with this gear
+// (affixes, weapon count for Thunder, combos) - instead of just counting items
+function smartFocus(G, s) {
+  const pairs = [['Fire', 'Ice'], ['Ice', 'Thunder'], ['Fire', 'Thunder']], z = () => 0.5, n = G.items.length;
+  if (n < RULES.smart.from) return null;
+  const cur = focusEls(stats(G.items)); let best = null, bv = -1, cv = -1;
+  for (const P of pairs) {
+    const extra = []; for (let k = 0; k < RULES.smart.look; k++) extra.push(mkWeapon(P[k % 2], 1, s + 1 + (k >> 1), z));
+    const v = expStrike({ ...G, items: [...G.items, ...extra] }, null, s + 3);
+    if (P.includes(cur[0]) && P.includes(cur[1])) cv = v;
+    if (v > bv) { bv = v; best = P; }
+  }
+  return bv > cv * RULES.smart.switchK ? best : cur;   // hysteresis: only switch for a clearly better pair
+}
 function smartPick(off, G, s, rng = Math.random) {
-  const S = stats(G.items), B = bossEl(s), hp = stageHp(s, G);
+  const S = stats(G.items), B = bossEl(s), hp = stageHp(s, G), F = smartFocus(G, s) || focusEls(S);
   let best = null, bs = -1e9;
   for (const c of off) {
     const probe = mkWeapon(c.element, Math.min(5, rollRank(s, () => 0.5, (c.hq ? RULES.hq.shift : 1) * (c.type === 'dark' ? RULES.dark.shift : 1))), s, () => 0.5);
     const g2 = { ...G, items: [...G.items, probe] }, q = expStrike(g2, B, s) / hp;
     const P = RULES.smart;
-    let sc = buildValue(S, c.element) + (c.hq ? P.hq : 0) + Math.min(P.logCap, 2 * Math.log2(Math.max(0.01, q)));
+    let sc = buildValue(S, c.element, F) + (c.hq ? P.hq : 0) + Math.min(P.logCap, 2 * Math.log2(Math.max(0.01, q)));
     if (q < P.tight) sc += P.w * (q - P.tight);   // survival first when it is tight
     if (c.type === 'dark') sc += curses(G).length ? P.darkCursed : P.dark;
     sc += rng() * 0.5; if (sc > bs) { bs = sc; best = c; }
@@ -373,8 +429,9 @@ function ruleText(it) {
     return t('cur').hpUp(P100(C.hpUp - 1));
   }
   if (it.kind === 'weapon') return t('ruleW', fmt(it.lo), fmt(it.hi), P100(it.crit));
-  const v = it.stat === 'critX' ? vfmt(it.val) : String(Math.round(it.val * 1000) / 10);
-  return t('eff')[it.stat](v, elName(it.element));
+  const v = it.stat === 'critX' || it.stat === 'burnT' || it.stat === 'chainN' ? vfmt(it.val) : String(Math.round(it.val * 1000) / 10);
+  const E9 = t('eff9');
+  return (E9[it.stat] || t('eff')[it.stat])(v, elName(it.element));
 }
 const ruleCol = (it) => it.cursed ? '#ff6a9a' : it.kind === 'accessory' ? '#ffd84a' : it.kind === 'armor' ? '#9ae8ff' : '#b8f0a0';
 const starStr = () => '';
@@ -383,8 +440,9 @@ const elemCount = (items, el) => items.filter((i) => i.element === el).length;
 function synLines(el, items) {
   const Y = stats(items.filter((i) => !i.cursed || i.curse !== 'seal')), n = Y.cnt[el], lv = Y.lv[el], nx = nextAt(lv);
   const P = (x) => Math.round(x * 100);
-  const fx = !lv ? t('synOff') : el === 'Fire' ? t('synFx').Fire(P(Y.burn), Y.burnT) : el === 'Ice' ? t('synFx').Ice(P(Y.vuln - 1), P(Y.critUp)) : t('synFx').Thunder(P(Y.chance), Y.chains);
-  return [`${elName(el)} ${t('syn')[el]} · ${t('synLv', n, lv, nx)}`, (lv ? `${elName(el)} ×${Y.mastery[el].toFixed(2)} · ` : '') + fx + (lv >= 3 ? ' · ' + t('lv3')[el] : '')];
+  const F9 = t('synFx9');
+  const fx = !lv ? t('synOff') : el === 'Fire' ? F9.Fire(P(Y.burn), Y.burnT, +(Y.stackK * 100).toFixed(1)) : el === 'Ice' ? F9.Ice(P(Y.vuln - 1), P(Y.critUp), +Y.critX.toFixed(2)) : F9.Thunder(P(Y.chance), Y.chains, Y.chainW);
+  return [`${elName(el)} ${t('syn')[el]} · ${t('synLv', n, lv, nx)}`, (lv ? `${elName(el)} ×${Y.mastery[el].toFixed(2)} · ` : '') + fx + (lv >= 3 ? ' · ' + t('lv3_9')[el] : '')];
 }
 const itemCol = (it) => it.cursed ? CURSE_COL : EL_COLOR[it.element];
 const RARITY = {
@@ -589,9 +647,9 @@ class Tooltip {
     this.c.removeAll(true); this.cur = it;
     this.unhl(); if (obj.getData('row')) { obj.setFillStyle(0xffe6a0, 0.14).setStrokeStyle(2, 0xffd36a, 0.75); this.hl = obj; }
     const w = W - 24; let lines;
-    if (it.kind === 'combo') lines = [[t('comboN')[it.combo], 26, it.on ? '#ffd84a' : '#a89ab8'], [t('comboD')[it.combo], 20, '#ffffff'], [it.on ? t('comboOn') : t('comboOff'), 17, it.on ? '#7aff8a' : '#c8b49a']];
+    if (it.kind === 'combo') lines = [[t('comboN')[it.combo], 26, it.on ? '#ffd84a' : '#a89ab8'], [comboDesc(it.combo), 20, '#ffffff'], [it.on ? `${t('comboOn')} · ${lvW()}${it.on}: ${comboFx(it.combo, it.on, stats(items))}` : t('comboOff'), 17, it.on ? '#7aff8a' : '#c8b49a']];
     else if (it.kind === 'stat') { const T2 = t('stTip'); lines = [[it.name, 24, it.css], [it.stat === 'curse' ? T2.curse : it.stat === 'perm' ? T2.perm(it.v, it.c) : T2[it.stat](it.v), 18, '#ffffff'], [it.atCap ? T2.cap(it.val) : T2.now(it.val), 20, '#ffd84a']]; }
-    else if (it.kind === 'syn') { const [a, b] = synLines(it.element, items); lines = [[a, 22, EL_CSS[it.element]], [t('synDesc')[it.element], 18, '#ffffff'], [b, 24, '#ffd84a']]; }
+    else if (it.kind === 'syn') { const [a, b] = synLines(it.element, items); lines = [[a, 22, EL_CSS[it.element]], [t('synDesc9')[it.element], 18, '#ffffff'], [b, 24, '#ffd84a']]; }
     else {
       lines = [
         [it.name, 26, it.cursed ? '#d9a6ff' : EL_CSS[it.element]],
@@ -600,7 +658,7 @@ class Tooltip {
       ];
       if (it.cursed) lines.push([t('curseNote', it.left), 18, '#ffb0d0']);
       else {
-        lines.push([it.kind === 'weapon' ? t('wNote') : t('effNote')[it.stat] || t('noCrit'), 16, '#c8b49a']);
+        lines.push([it.kind === 'weapon' ? t('wNote') : t('effNote9')[it.stat] || t('effNote')[it.stat] || t('noCrit'), 16, '#c8b49a']);
         const [a, b] = synLines(it.element, items); lines.push([a, 18, EL_CSS[it.element]], [b, 17, '#ffe8a0']);
       }
     }
@@ -768,15 +826,31 @@ function nextBossLine(scene, x, y, s, size = 14, depth = 0) {
 
 // ---- build readability: what the next element level gives, combo pairs, chest hints, level-up banners ----
 const COMBO_ELS = [['melt', 'Fire', 'Ice'], ['superconduct', 'Ice', 'Thunder'], ['overload', 'Fire', 'Thunder']];
-function elemLvFx(el, lv) {   // compact effect of element level lv (>= 1)
+function elemLvFx(el, lv, S = null) {   // compact effect of element level lv (>= 1); S adds your affixes / weapon count
   const E = RULES.elem, L3 = Math.min(3, lv), P = (x) => Math.round(x * 100);
-  if (el === 'Fire') return t('rw').Fire(P(E.Fire.burn[L3]), E.Fire.ticks[L3] + Math.max(0, lv - 3));
-  if (el === 'Ice') return t('rw').Ice(P(E.Ice.vuln[L3] * (lv > 3 ? 1 + 0.25 * (lv - 3) : 1) - 1), P(E.Ice.crit[L3]));
-  return t('rw').Thunder(P(E.Thunder.chance[L3]), E.Thunder.chains[L3] + Math.max(0, lv - 3));
+  const up = Math.max(0, lv - 3), R9 = t('rw9');
+  if (el === 'Fire') return R9.Fire(P(E.Fire.burn[L3]), E.Fire.ticks[L3] + up + (S ? S.aff.burnT : 0));
+  if (el === 'Ice') return R9.Ice(P(E.Ice.vuln[L3] * (1 + E.Ice.vulnLv * up) - 1), P(E.Ice.crit[L3] + E.Ice.critLv * up), +(E.Ice.critDmg * lv).toFixed(2));
+  return R9.Thunder(P(Math.min(RULES.caps.chance, E.Thunder.chance[L3] + (S ? S.aff.chance : 0))), E.Thunder.chains[L3] + up + (S ? S.aff.chainN : 0));
+}
+// v9 combos: what combo k does at level lv (S = current stats, for the crit damage a MELT crit uses)
+const comboVal = (k, lv) => { const C = RULES.combos[k]; return C.base * Math.pow(C.per, Math.max(0, lv - 1)); };
+const sig = (x) => +x.toPrecision(3);
+function comboFx(k, lv, S) {
+  const C = RULES.combos, F = t('cfx9');
+  if (k === 'melt') return F.melt(Math.round(Math.min(C.melt.cap, comboVal('melt', lv)) * 100), sig((S ? S.critX : RULES.critX) * Math.pow(C.melt.x, lv - 1)));
+  if (k === 'superconduct') return F.superconduct(sig(comboVal('superconduct', lv)));
+  return F.overload(Math.round(comboVal('overload', lv) * 100));
+}
+function comboDesc(k) {
+  const C = RULES.combos, D = t('comboD9');
+  if (k === 'melt') return D.melt(Math.round(C.melt.base * 100), C.melt.per, C.melt.x);
+  if (k === 'superconduct') return D.superconduct(C.superconduct.base, C.superconduct.per);
+  return D.overload(Math.round(C.overload.base * 100), C.overload.per);
 }
 const lvW = () => (LANG === 'pt' || LANG === 'es' ? 'Nv' : 'Lv');
-const lv3Name = (el) => String(t('lv3')[el]).split(/[:：]/)[0];
-const nextReward = (el, lv) => `${t('rwMast', RULES.elem.mastery)} · ${elemLvFx(el, lv + 1)}` + (lv + 1 === 3 ? ' · ' + lv3Name(el) : '');
+const lv3Name = (el) => String(t('lv3_9')[el]).split(/[:：]/)[0];
+const nextReward = (el, lv, S = null) => `${t('rwMast', RULES.elem.mastery)} · ${elemLvFx(el, lv + 1, S)}` + (lv + 1 === 3 ? ' · ' + lv3Name(el) : '');
 // what taking ONE more item of element el would do right now (chest hint): unlock / level a combo, or reach the next level
 function chestHint(G, el) {
   const S = stats(G.items), n = S.cnt[el] + 1, lv2 = Math.floor(n / RULES.elem.step);
@@ -792,8 +866,8 @@ function chestHint(G, el) {
 // level-ups / combo changes between two stats() snapshots -> banner lines [title, sub, colour]
 function buildUps(A, B) {
   const out = [];
-  COMBO_ELS.forEach(([k]) => { if (B[k] > A[k]) out.push([A[k] ? t('comboUp', t('comboN')[k], B[k]) : t('comboUnl', t('comboN')[k]), `${t('rwMast', +Math.pow(RULES.combos.res, B[k]).toPrecision(3))} · ${t('cfx')[k](k === 'overload' ? Math.round(B.boom * 100) : k === 'melt' ? +(RULES.combos.melt.base * Math.pow(RULES.combos.melt.per, B[k] - 1)).toPrecision(3) : +(RULES.combos.superconduct.base * Math.pow(RULES.combos.superconduct.per, B[k] - 1)).toPrecision(3))}`, '#7aff8a']); });
-  ELEMENTS.forEach((el) => { if (B.lv[el] > A.lv[el]) out.push([t('lvUp', elName(el).toUpperCase(), B.lv[el]), `${t('rwMast', RULES.elem.mastery)} · ${elemLvFx(el, B.lv[el])}` + (B.lv[el] === 3 ? ' · ' + t('lv3')[el] : ''), EL_CSS[el]]); });
+  COMBO_ELS.forEach(([k]) => { if (B[k] > A[k]) out.push([A[k] ? t('comboUp', t('comboN')[k], B[k]) : t('comboUnl', t('comboN')[k]), comboFx(k, B[k], B), '#7aff8a']); });
+  ELEMENTS.forEach((el) => { if (B.lv[el] > A.lv[el]) out.push([t('lvUp', elName(el).toUpperCase(), B.lv[el]), `${t('rwMast', RULES.elem.mastery)} · ${elemLvFx(el, B.lv[el], B)}` + (B.lv[el] === 3 ? ' · ' + t('lv3_9')[el] : ''), EL_CSS[el]]); });
   return out;
 }
 // big centred banner (over everything, readable on mobile), queued so two level-ups never overlap
@@ -811,6 +885,12 @@ function buildBanner(scene, lines) {
   }));
 }
 // debug / screenshot hook: jump straight to stage n with a gear set built by playing n stages of smart-ish picks
+// test hook: DC.jumpEls = ['Fire', 'Ice'] makes DC.jump build that element pair (the lagging one first), for v9 combo checks
+function pickEls(off, G, els) {
+  const S = stats(G.items), want = [...els].sort((a, b) => S.cnt[a] - S.cnt[b]);
+  for (const e of want) { const c = off.find((c) => c.element === e && c.type === 'normal'); if (c) return c; }
+  return off.find((c) => els.includes(c.element)) || off[0];
+}
 function jumpRun(n, seed) {
   // plays n stages with the 'smart' sim policy (favour gold accessories, own element, black early) until a run survives
   let x = (seed || 12345) >>> 0;
@@ -820,7 +900,7 @@ function jumpRun(n, seed) {
     const force = n > 32 || tries === 399; // deep jumps: pretend every boss died (jackpot each stage) - screenshot/debug only
     R = newRun(); let dead = false;
     for (let s = 0; s < n && !dead; s++) {
-      const off = rollOffer(rng, s), G = R.G, best = smartPick(off, G, s, rng);
+      const off = rollOffer(rng, s), G = R.G, best = window.DC.jumpEls ? pickEls(off, G, window.DC.jumpEls) : smartPick(off, G, s, rng);
       const it = openChest(best, rng, s, G);
       equip(G, nameItem(it));
       const d = computeDamage(G, rng, s);
@@ -964,9 +1044,9 @@ function openStats(sc, filter = null, keepScroll = false) {
   ELEMENTS.forEach((el) => {
     const lv = Y.lv[el], n = Y.cnt[el], nx = nextAt(lv), st = RULES.elem.step, frac = Math.max(0, Math.min(1, (n - lv * st) / st));
     put(sc.add.image(30, y + 12, 'el_' + el).setScale(2.2));
-    T(50, y + 12, `${elName(el)} ${lvW()}${lv}`, 20, lv ? '#ffffff' : EL_CSS[el]); T(W - 20, y + 12, `${n}/${nx}`, 20, EL_CSS[el], 1);
+    const lt9 = T(50, y + 12, `${elName(el)} ${lvW()}${lv} · ${String(t('synDesc9')[el]).split(/[:：]/)[0]}`, 20, lv ? '#ffffff' : EL_CSS[el]); fitText(lt9, W - 150, 20); T(W - 20, y + 12, `${n}/${nx}`, 20, EL_CSS[el], 1);
     put(sc.add.rectangle(20, y + 32, W - 40, 7, 0x3a2a34).setOrigin(0, 0.5)); if (frac > 0) put(sc.add.rectangle(20, y + 32, (W - 40) * frac, 7, EL_COLOR[el]).setOrigin(0, 0.5));
-    const nr = put(txtW(sc, W / 2, y + 40, `→ ${lvW()}${lv + 1}: ${nextReward(el, lv)}`, 16, '#ffe8a0', W - 40));
+    const nr = put(txtW(sc, W / 2, y + 40, `→ ${lvW()}${lv + 1}: ${nextReward(el, lv, Y)}`, 16, '#ffe8a0', W - 40));
     const row = drag(sc.tip.attach(put(sc.add.rectangle(W / 2, y + 24, W - 24, 48, 0xffffff, 0.001).setData('row', true)), { kind: 'syn', element: el, rarity: 'RARE', name: t('syn')[el] }));
     y += 46 + nr.height + 8;
   });
@@ -978,7 +1058,7 @@ function openStats(sc, filter = null, keepScroll = false) {
     let cx = 20; const yy = y + 36, al = on ? 1 : 0.5;
     put(sc.add.image(cx + 9, yy, 'el_' + a).setScale(1.6).setAlpha(al)); cx += 22; const ta = T(cx, yy, `${need}+`, 16, on ? '#d8ffd8' : '#a89ab8'); cx += ta.width + 4;
     put(sc.add.image(cx + 9, yy, 'el_' + b).setScale(1.6).setAlpha(al)); cx += 22;
-    T(cx, yy, `${need}: ${t('rwMast', +Math.pow(RULES.combos.res, L).toPrecision(3))}`, 16, on ? '#d8ffd8' : '#a89ab8');
+    const cf = T(cx, yy, `${need}: ${comboFx(k, L, Y)}`, 16, on ? '#d8ffd8' : '#a89ab8'); fitText(cf, W - 20 - cx, 16);
     drag(sc.tip.attach(put(sc.add.rectangle(W / 2, y + 24, W - 24, 48, 0xffffff, 0.001).setData('row', true)), { kind: 'combo', combo: k, on: lv, rarity: on ? 'LEGENDARY' : 'COMMON', element: 'Fire', name: t('comboN')[k] }));
     y += 54;
   });
@@ -1622,7 +1702,7 @@ class Strike extends Phaser.Scene {
   pw() { return strikeDist(this.G, this.s); }
   constructor() { super('strike'); }
   init(d) {
-    this.statsHidden = false; this.statsLocked = false; this.gearOpen = false; this.gearPinned = false; this.peekT = null; this.drag = null; this.hoverPow = false; this.hoverPop = false; this.uiCam = null; this.execd = false; this.scShown = false; this.comboN = 0; this.rc = 0; this.recoilOn = false;
+    this.statsHidden = false; this.statsLocked = false; this.gearOpen = false; this.gearPinned = false; this.peekT = null; this.drag = null; this.hoverPow = false; this.hoverPop = false; this.uiCam = null; this.execd = false; this.scShown = false; this.meltShown = false; this.comboN = 0; this.rc = 0; this.recoilOn = false;
     this.run = d.run; this.s = this.run.s; this.G = this.run.G; this.log = this.run.log; this.struck = false; this.leaving = false; this.cursesTicked = false; this.dropItem = null;
     this.cfg = bossFor(this.s); this.hpMax = stageHp(this.s, this.G);
   }
@@ -1640,7 +1720,8 @@ class Strike extends Phaser.Scene {
       res.hits.forEach((h) => { h.v *= k; h.cv *= k; }); res.hit *= k; res.boom *= k; res.burn *= k; res.ticks = res.ticks.map((x) => x * k); res.total *= k; res.kill = true; res.executed = false; }
     res.ratio = res.total / this.hpMax; res.L = res.executed ? 1 : okLevel(res.total, this.hpMax); res.hp = this.hpMax;
     window.DC.result = { total: res.total, hp: this.hpMax, L: res.L, ratio: res.ratio, hits: res.hits.length, crits: res.crits, chained: res.chained, drains: res.hits.filter((h) => h.v < 0).length, weak: res.weak, vuln: res.S.vuln, burn: res.burn, ticks: res.ticks.length, off: res.off, power: expStrike(this.G, res.B, s), weaponCrits: res.hits.map((h) => (h.it ? h.it.crit : RULES.hero.crit)),
-      combo: res.combo, echoes: res.echoes, boom: res.boom, executed: res.executed, kill: res.kill, melt: res.S.melt, superconduct: res.S.superconduct, overload: res.S.overload, execLine: res.S.execute };
+      combo: res.combo, echoes: res.echoes, boom: res.boom, executed: res.executed, kill: res.kill, melt: res.S.melt, superconduct: res.S.superconduct, overload: res.S.overload, execLine: res.S.execute,
+      stacks: res.stacks, bolts: res.bolts, burnCrits: (res.tcrit || []).filter(Boolean).length, ticks: res.ticks.length, scChains: res.hits.filter((h) => h.sc && h.cv).length, olBase: res.olBase, meltP: res.S.meltP, scX: res.S.scX, olK: res.S.olK, chains: res.S.chains, chainW: res.S.chainW };
     this.tip = new Tooltip(this, () => this.items);
     const c = this.cfg;
     this.bShadow = shadow(this, c.x, LAVA_GROUND, c.body[1] * c.scale * 1.05);
@@ -1753,14 +1834,15 @@ class Strike extends Phaser.Scene {
     for (let k = 0; k < nH; k += B) { const hs = H.slice(k, k + B); steps.push(B > 1 ? { kind: 'batch', hs, from: k } : { kind: 'hit', h: hs[0], from: k }); }
     const nVol = steps.length - nPre;
     if (r.boom > 0) steps.push({ kind: 'boom', v: r.boom });
-    const nb = r.ticks.length, shownTicks = nb > 4 ? 3 : nb;
-    if (nb && r.S.melt) steps.push({ kind: 'melt' });
-    for (let k = 0; k < shownTicks; k++) steps.push({ kind: 'burn', v: r.ticks[k], n: 1 });
-    if (nb > shownTicks) steps.push({ kind: 'burn', v: r.ticks[0] * (nb - shownTicks), n: nb - shownTicks });
+    const nb = r.ticks.length, shownTicks = nb > 4 ? 3 : nb, tc = r.tcrit || [];
+    // v9: FIRE stacks first (Fire hits + OVERLOAD bolts), then the ticks; MELT ticks can crit
+    if (nb && r.stacks > 0) steps.push({ kind: 'stack', n: r.stacks, ol: r.S.overload && r.bolts > 0 });
+    for (let k = 0; k < shownTicks; k++) steps.push({ kind: 'burn', v: r.ticks[k], n: 1, crit: !!tc[k] });
+    if (nb > shownTicks) { const rest = r.ticks.slice(shownTicks); steps.push({ kind: 'burn', v: rest.reduce((a, x) => a + x, 0), n: nb - shownTicks, crit: tc.slice(shownTicks).some(Boolean), nc: tc.slice(shownTicks).filter(Boolean).length }); }
     if (r.executed) steps.push({ kind: 'exec' });
     const hitGap = Phaser.Math.Clamp(2400 / Math.max(1, nVol), 95, 300);
     window.DC.result.nsteps = steps.length; window.DC.result.batch = B; window.DC.result.hitGap = Math.round(hitGap);
-    window.DC.result.seqMs = Math.round(nPre * 230 + nVol * hitGap + Math.min(nb, 4) * 230);
+    window.DC.result.seqMs = Math.round(nPre * 230 + nVol * hitGap + Math.min(nb, 4) * 230 + (nb && r.stacks > 0 ? 420 : 0));
     let sum = 0, burn = 0, next = 1, hitsDone = 0;
     const show = (v) => {
       if (!this.dmgOn) { if (!(v > 0)) return; this.dmgOn = true; this.dmg.setAlpha(1); popText(this, this.dmg, 1); if (this.logV) this.logV.setAlpha(1); }
@@ -1790,7 +1872,7 @@ class Strike extends Phaser.Scene {
       const target = k === steps.length - 1 || steps[k + 1] && steps[k + 1].kind === 'exec' && k === steps.length - 2 ? r.total : capN(sum + burn);
       this.popNumber(s, k);
       window.DC.popped = k + 1;
-      const c = { v: shown }, gap = K === 'burn' ? 230 : K === 'hit' || K === 'batch' ? hitGap : K === 'boom' || K === 'melt' ? 420 : 230;
+      const c = { v: shown }, gap = K === 'burn' ? 230 : K === 'hit' || K === 'batch' ? hitGap : K === 'boom' || K === 'stack' ? 420 : 230;
       this.tweens.add({ targets: c, v: target, duration: gap * 0.8, ease: 'Cubic.out', onUpdate: () => show(c.v), onComplete: () => { shown = target; show(target); } });
       this.time.delayedCall(gap, () => runStep(k + 1));
     };
@@ -1810,17 +1892,18 @@ class Strike extends Phaser.Scene {
       label = neg ? '−' + fmt(-h.v) : fmt(h.v); col = neg ? '#c890ff' : crit ? '#ffffff' : h.it ? EL_CSS[h.it.element] : '#ffffff';
       size = crit ? 52 : neg ? 30 : 30;
       if (h.echo) { label = t('echoTag') + ' ' + label; window.DC.echoPopped = (window.DC.echoPopped || 0) + 1; }
-      if (crit && this.res.S.superconduct && !this.scShown) { this.scShown = true; this.comboPop(t('scPop'), '#9ae8ff', 0x8ae2ff); }
+      if (h.sc && !this.scShown) { this.scShown = true; this.comboPop(t('comboN').superconduct + ' ' + comboFx('superconduct', this.res.S.superconduct, this.res.S), '#9ae8ff', 0x8ae2ff); }
     } else if (K === 'batch') {
       const v = s.hs.reduce((a, h) => a + h.v + h.cv, 0); crit = s.hs.some((h) => h.crit); chain = s.hs.reduce((a, h) => a + h.chain, 0); neg = v < 0;
       label = (neg ? '−' + fmt(-v) : fmt(v)) + ` ×${s.hs.length}`; col = neg ? '#c890ff' : crit ? '#ffffff' : '#ffffff'; size = crit ? 44 : 32;
     }
     else if (K === 'seal') { label = t('sealPop', elName(s.el)); col = '#c8a0ff'; size = 30; }
     else if (K === 'boom') { label = t('overloadPop', fmt(s.v)); col = '#ffb04a'; size = 40; this.comboPop(t('comboN').overload + '!', '#ffb04a', 0xffa040); }
-    else if (K === 'melt') { this.comboPop(t('comboN').melt + ' ×' + +(RULES.combos.melt.base * Math.pow(RULES.combos.melt.per, Math.max(0, this.res.S.melt - 1))).toPrecision(3) + '!', '#ff9a6a', 0xff7a3a); return; }
+    else if (K === 'stack') { label = t('stackPop', s.n); col = '#ffb04a'; size = 32; if (s.ol) this.comboPop(t('comboN').overload + '! ' + t('cfx9').overload(Math.round(this.res.S.olK * 100)), '#ffb04a', 0xffa040); }
     else if (K === 'weak') { label = t('cur').weak(P100(1 - s.v)); col = '#ff7a9a'; size = 32; }
     else if (K === 'vuln') { label = t('vulnPop', fmtX(s.v)); col = '#9ae8ff'; size = 40; }
-    else { label = t('burnPop', fmt(s.v)) + (s.n > 1 ? ` ×${s.n}` : ''); col = '#ff9a4a'; size = 34; }
+    else { label = t('burnPop', fmt(s.v)) + (s.n > 1 ? ` ×${s.n}` : ''); col = s.crit ? '#ffffff' : '#ff9a4a'; size = s.crit ? 44 : 34; crit = !!s.crit;
+      if (s.crit && !this.meltShown) { this.meltShown = true; this.comboPop(t('comboN').melt + '! ' + comboFx('melt', this.res.S.melt, this.res.S), '#ff9a6a', 0xff7a3a); } }
     this.logAdd(K, s, label, col, crit, chain, cv, neg);
     this.elemFx(s, crit, chain);
     if (neg) window.DC.drainPopped = (window.DC.drainPopped || 0) + 1;
@@ -1839,7 +1922,7 @@ class Strike extends Phaser.Scene {
     if (neg) this.boss.setTint(0xc090ff); else this.boss.setTintFill(0xffffff);   // white hit flash on the boss
     this.time.delayedCall(neg ? 60 : crit ? 70 : 45, () => this.untint());
     this.recoil(neg ? -5 : crit ? 14 : fast ? 5 : 9);   // local boss knockback instead of a camera shake
-    const BC = { vuln: 0x6ad8ff, burn: 0xff7a2a };
+    const BC = { vuln: 0x6ad8ff, burn: 0xff7a2a, stack: 0xffa040 };
     const bc = neg ? CURSE_COL : crit ? 0xffd23a : BC[K] || (K === 'hit' && s.h.it ? EL_COLOR[s.h.it.element] : 0xffffff);
     burst(this, x, y, bc, Math.max(3, Math.round((crit ? 18 : 8) * this.lite())), 220, 'px').setDepth(43);
     // sound: crits always ring; normal hits tick at most every ~90ms so long volleys stay clean
@@ -1870,11 +1953,11 @@ class Strike extends Phaser.Scene {
     if (K === 'hit') {
       const h = s.h; icon = h.it ? ['icons', h.it.frame] : ['hero_idle', 0];
       name = h.it ? h.it.name : t('logHero'); val = neg ? '−' + fmt(-h.v) : fmt(h.v);
-      if (h.echo) marks.push([t('echoTag'), '#9ae8ff']); if (crit) marks.push([t('logCrit'), '#fff2a0']); if (chain && cv) marks.push(['+' + fmt(cv), '#ffe866']);
+      if (h.echo) marks.push([t('echoTag'), '#9ae8ff']); if (crit) marks.push([t('logCrit'), '#fff2a0']); if (chain && cv) marks.push(['+' + fmt(cv), '#ffe866']); if (h.sc && cv) marks.push([t('scTag'), '#9ae8ff']);
     } else if (K === 'batch') {
       const it = (s.hs.find((h) => h.it) || {}).it; icon = it ? ['icons', it.frame] : ['hero_idle', 0];
-      name = t('logBatch', s.hs.length); val = label.replace(/ ×\d+$/, ''); if (crit) marks.push([t('logCrit'), '#fff2a0']);
-    } else icon = ['el_' + (K === 'vuln' ? 'Ice' : K === 'seal' ? s.el : 'Fire'), null];
+      name = t('logBatch', s.hs.length); val = label.replace(/ ×\d+$/, ''); if (crit) marks.push([t('logCrit'), '#fff2a0']); if (s.hs.some((h) => h.sc && h.cv)) marks.push([t('scTag'), '#9ae8ff']);
+    } else { icon = ['el_' + (K === 'vuln' ? 'Ice' : K === 'seal' ? s.el : 'Fire'), null]; if (K === 'burn' && s.crit) marks.push([s.nc > 1 ? t('logCrit') + ' ×' + s.nc : t('logCrit'), '#fff2a0']); }
     const n = this.logRows.length, yy = y0 + Math.min(n, LOG_N) * RH + RH / 2;
     const row = [];
     if (icon) { const im = put(icon[1] === null ? this.add.image(22, yy, icon[0]).setScale(1.2) : this.add.image(22, yy, icon[0], icon[1]).setScale(icon[0] === 'icons' ? 0.6 : 0.7)); if (icon[0] === 'hero_idle') im.setCrop(14, 8, 36, 30); row.push(im); }
@@ -1920,7 +2003,7 @@ class Strike extends Phaser.Scene {
   elemFx(s, crit, chain) {
     const hd = this.head(), N = (n) => Math.max(4, Math.round(n * this.lite())), cam = this.cameras.main, now = this.time.now, many = this.res.hits.length > 15;
     if (s.kind === 'vuln') { this.ring(hd.x, hd.y, 0x8ae2ff, 8, 6); burst(this, hd.x, hd.y, 0x8ae2ff, N(30), 300, 'spark').setDepth(42); this.boss.setTint(0x9ae8ff); this.time.delayedCall(160, () => this.untint()); return; }
-    if (s.kind === 'burn') {
+    if (s.kind === 'burn' || s.kind === 'stack') {
       const f = this.add.particles(hd.x, hd.y + 40, 'spark', { x: { min: -70, max: 70 }, speedY: { min: -220, max: -90 }, lifespan: 600, scale: { start: 1.3, end: 0 }, tint: [0xff5a1a, 0xffb02a, 0xffe08a], blendMode: 'ADD', emitting: false }).setDepth(42);
       f.explode(N(26)); this.time.delayedCall(800, () => f.destroy());
       this.boss.setTint(0xff9a6a); this.time.delayedCall(120, () => this.untint()); return;
