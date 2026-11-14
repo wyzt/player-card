@@ -356,8 +356,8 @@ const TIER_TINT = [0xffffff, 0xc8b0ff, 0x8ac8ff, 0xff9ae0, 0xffe08a, 0x9affd8];
 function bossFor(s) {
   const b = BOSSES[s % BOSSES.length], cyc = Math.floor(s / BOSSES.length), big = isBig(s);
   const k = Math.min(1.35, 1 + 0.07 * cyc) * (big ? 1.12 : 1);
-  const scale = Math.min(b.scale * k, Math.max(b.scale, 330 / b.fh, 0), Math.max(b.scale, 600 / b.fw)), w = b.fw * scale;
-  const x = Math.round(Math.min(PLAY_R - w / 2, Math.max(760, 560 + w / 2)));   // right edge stays left of the stats panel
+  const scale = Math.min(b.scale * k, 270 / b.fw, 330 / b.fh), w = b.fw * scale;
+  const x = Math.round(W - 10 - w / 2);   // portrait: the boss stands on the right, the hero on the left
   const tint = cyc ? TIER_TINT[((cyc - 1) % (TIER_TINT.length - 1)) + 1] : null;
   return { ...b, scale, x, tint, cyc, big, idx: s % BOSSES.length };
 }
@@ -396,13 +396,16 @@ function fmt(n) {
 }
 
 // ===== PHASER =====
-const W = 1200, H = 628;
+// PORTRAIT canvas (X player cards open full-screen portrait on phones). FIT keeps it whole; wide viewports letterbox it.
+// 432 wide: on a 390-px phone 1 logical px = 0.9 CSS px, so the smallest text (16) stays >= 14 CSS px.
+const W = 432, H = 864;
 let FONT = fontFor(LANG);
-// FIXED HUD LAYOUT (same spot on every screen): POWER top-left, boss info top-centre, HERO STATS panel on the right,
-// play area (chests / hero vs boss) in between: x < PLAY_R
-const STAT_Y = 10, STAT_X = 1006, GEAR_X = 652, PLAY_R = 990, HPX = 600 - 3, HPW = 276;
-const LAVA_GROUND = 512;   // lava floor line of bg_lava drawn at 3x
-const PICK_GROUND = 542;   // top edge of the floor strip in bg_hoard (the hero stands on it on the pick screen)
+// FIXED LAYOUT: top HUD (hero, POWER, element + combo chips) 6..132, boss box 138..214, play area, bottom gear bar BAR_Y..H
+const BOSS_Y = 138, BAR_Y = 798, HPX = 22, HPW = W - 44, PLAY_R = W;
+const LAVA_GROUND = 700;   // floor line on the strike / intro / title screens
+const PICK_GROUND = 790;   // hoard floor on the pick screen (hero + waiting boss stand on it)
+const HERO_X = 86, TOPY_POP = 250;
+const CHEST_X = [76, 216, 356], CHEST_BASE = 500, CHEST_SC = 4, CARD_Y = 668;
 window.DC = { phase: 'boot', round: 0 };
 // test hook: DC.jump(20) starts stage 21 with gear built by 20 stages of picks
 window.DC.jump = (n, seed, scene, bare) => {
@@ -425,7 +428,7 @@ function txt(scene, x, y, s, size, color = '#ffffff', extra = {}) {
 // shrink a text's font size until it fits maxW (translations differ in length)
 function fitText(o, maxW, size) {
   o.__maxW = maxW; o.__size = size;
-  let sz = size; while (o.width > maxW && sz > 9) { sz -= 1; o.setFontSize(sz + 'px'); }
+  let sz = size; while (o.width > maxW && sz > 12) { sz -= 1; o.setFontSize(sz + 'px'); }
   return o;
 }
 function setFit(o, s) { o.setFontSize(o.__size + 'px'); o.setText(s); if (o.__maxW) fitText(o, o.__maxW, o.__size); return o; }
@@ -450,8 +453,12 @@ function synth(scene, kind, i = 0) {
     else if (kind === 'kill') { tone('sine', 90, 30, 0.5, 0.35); noise(0.35, 0.22, 600, 0.5); }
   } catch (e) {}
 }
-function backdrop(scene, key, dim) {
-  scene.add.image(W / 2, H / 2, key).setScale(3);
+// pixel backdrop (432x240 art) zoomed x4 around its floor line, centred; dark fill below the art
+function backdrop(scene, key, dim, gy = key === 'bg_hoard' ? PICK_GROUND : LAVA_GROUND) {
+  const gi = key === 'bg_hoard' ? 196 : 186, s = Math.max(4, gy / gi);
+  scene.add.rectangle(-200, -200, W + 400, H + 400, 0x120a10).setOrigin(0);
+  scene.add.image(W / 2, gy, key).setOrigin(0.5, gi / 240).setScale(s);
+  const bot = gy + (240 - gi) * s; if (bot < H) scene.add.rectangle(-200, bot, W + 400, H - bot + 200, 0x1a0c0c).setOrigin(0);
   if (dim) scene.add.rectangle(-200, -200, W + 400, H + 400, 0x0a0612, dim).setOrigin(0);
 }
 // fantasy frame: dark plate, gold double border, corner studs
@@ -494,11 +501,11 @@ function popText(scene, t, scale = 1) {
   t.setScale(0);
   scene.tweens.add({ targets: t, scale: { from: 0, to: scale * 1.35 }, duration: 160, ease: 'Quad.out', onComplete: () => scene.tweens.add({ targets: t, scale, duration: 160, ease: 'Back.out' }) });
 }
-// Item tooltip: hover (mouse) or tap to toggle (touch). Always clamped inside the 1200x628 canvas.
+// Item tooltip: hover (mouse) or tap to toggle (touch). Drawn by the UI camera, always clamped inside the portrait canvas.
 class Tooltip {
   constructor(scene, getItems) {
     this.scene = scene; this.getItems = getItems; this.pinned = false; this.cur = null;
-    this.c = scene.add.container(0, 0).setDepth(1000).setVisible(false);
+    this.c = scene.add.container(0, 0).setDepth(1000).setVisible(false); ensureHud(scene); hudAdd(scene, this.c);
     scene.input.on('pointerdown', (p, over) => { if (!over.some((o) => o.getData && o.getData('item'))) this.hide(true); });
   }
   get visible() { return this.c.visible; }
@@ -516,7 +523,7 @@ class Tooltip {
     const sc = this.scene, items = this.getItems(), R = RARITY[it.rarity];
     this.c.removeAll(true); this.cur = it;
     this.unhl(); if (obj.getData('row')) { obj.setFillStyle(0xffe6a0, 0.14).setStrokeStyle(2, 0xffd36a, 0.75); this.hl = obj; }
-    const w = 470; let lines;
+    const w = W - 24; let lines;
     if (it.kind === 'gem') lines = [[t('gemT'), 26, '#e0b8ff'], [t('gemHeld', this.scene.G ? this.scene.G.gems : 0), 22, '#ffffff'], [t('gemDesc'), 18, '#d8ccff']];
     else if (it.kind === 'combo') lines = [[t('comboN')[it.combo], 26, it.on ? '#ffd84a' : '#a89ab8'], [t('comboD')[it.combo], 20, '#ffffff'], [it.on ? t('comboOn') : t('comboOff'), 17, it.on ? '#7aff8a' : '#c8b49a']];
     else if (it.kind === 'syn') { const [a, b] = synLines(it.element, items); lines = [[a, 22, EL_CSS[it.element]], [t('synDesc')[it.element], 18, '#ffffff'], [b, 24, '#ffd84a']]; }
@@ -534,19 +541,19 @@ class Tooltip {
     }
     let y = 18; const texts = [];
     lines.forEach(([str, size, col]) => {
-      const tx = sc.add.text(w / 2, y, str, { fontFamily: FONT, fontSize: size + 'px', color: col, fontStyle: 'bold', stroke: '#140812', strokeThickness: 4, align: 'center', wordWrap: { width: w - 30, useAdvancedWrap: true } }).setOrigin(0.5, 0);
+      const tx = hudAdd(sc, sc.add.text(w / 2, y, str, { fontFamily: FONT, fontSize: size + 'px', color: col, fontStyle: 'bold', stroke: '#140812', strokeThickness: 4, align: 'center', wordWrap: { width: w - 30, useAdvancedWrap: true } }).setOrigin(0.5, 0));
       texts.push(tx); y += tx.height + 8;
     });
     const h = y + 14; // measured, so wrapped lines (long translations) stay inside the frame
-    const g = panel(sc, 0, 0, w, h, { border: R.col, alpha: 0.95 });
+    const g = hudAdd(sc, panel(sc, 0, 0, w, h, { border: R.col, alpha: 0.98 }));
     this.c.add(g); this.c.add(texts);
     // place beside the icon, flip to the other side / clamp so it never leaves the canvas
     // bigger on small screens (mobile / tiny iframe) so it stays readable
-    const k = sc.scale.displaySize.width < 700 ? 1.55 : 1, sw = w * k, sh = h * k;
+    const k = 1, sw = w * k, sh = h * k;
     const b = obj.getBounds();
-    let x = b.right + 14; if (x + sw > W - 8) x = b.left - 14 - sw;
-    x = Phaser.Math.Clamp(x, 8, W - sw - 8);
-    const ty = Phaser.Math.Clamp(b.centerY - sh / 2, 8, H - sh - 8);
+    const x = 12;   // full-width card under (or above) the tapped thing
+    let ty = b.bottom + 8; if (ty + sh > H - 8) ty = b.top - 8 - sh;
+    ty = Phaser.Math.Clamp(ty, 8, H - sh - 8);
     this.c.setScale(k).setPosition(x, ty).setScrollFactor(0).setVisible(true);
     window.DC.tooltip = { name: lines[0][0], rule: lines[lines.length > 2 ? 2 : 1][0], x, y: ty, w: sw, h: sh };
   }
@@ -631,20 +638,6 @@ function hudCamera(scene) {
   scene.sys.events.on(ev, f); scene.sys.events.once('shutdown', () => scene.sys.events.off(ev, f));
 }
 function toHud(scene, objs) { objs.forEach((o) => { o.__hud = true; o.cameraFilter &= ~scene.uiCam.id; scene.cameras.main.ignore(o); }); }
-function powerHud(scene, v) {
-  const D = 70, x = 12, y = 10, w = 216, h = 62, mk = (o) => { o.__hud = true; return o; };
-  if (!scene.uiCam || !scene.cameras.cameras.includes(scene.uiCam)) hudCamera(scene);
-  const objs = [], add = (o) => { objs.push(o); return o; };
-  add(panel(scene, x, y, w, h, { border: 0xffcf40, alpha: 0.92 }).setDepth(D));
-  add(txt(scene, x + w / 2, y + 15, t('power'), 14, '#ffe8a0', { strokeThickness: 4, maxW: w - 16 }).setDepth(D + 1));
-  const n = add(txt(scene, x + w / 2, y + 42, fmt(v), 30, '#ffd36a', { strokeThickness: 7, stroke: '#2a1404', maxW: w - 20 }).setDepth(D + 1));
-  const hit = add(scene.add.rectangle(x + w / 2, y + h / 2, w, h, 0xffffff, 0.001).setDepth(D + 2).setData('item', true));
-  objs.forEach((o) => { mk(o); o.cameraFilter &= ~scene.uiCam.id; scene.cameras.main.ignore(o); });   // only the UI camera draws the chip
-  if (scene.openGear) hit.setInteractive({ useHandCursor: true }).on('pointerdown', () => { if (scene.statsLocked) return; if (scene.gearOpen && scene.gearPinned) scene.closeGear(); else scene.openGear(true); });
-  scene.powPos = { x: x + w / 2, y: y + 42 }; window.DC.powerHud = { x: x + w / 2, y: y + 42, text: n.text };
-  return n;
-}
-const GEM_ROW = { x: 1170, y: 482 };   // where a found PURIFY GEM flies to (the stats panel's gem row)
 const BIG_R = { EPIC: 1, LEGENDARY: 1, MYTHIC: 1 }, LEG_R = { LEGENDARY: 1, MYTHIC: 1 };
 const pct = (x) => { const p = x * 100; return p >= 100 ? fmt(p) : p >= 10 ? Math.round(p) : p.toFixed(1).replace(/\.0$/, ''); };
 function newRun() { return { s: 0, G: newGear(), log: [], total: 0, maxHit: 0 }; }
@@ -706,7 +699,7 @@ const chestKey = (c) => c.type === 'dark' ? 'black' : c.element;
 // NEXT boss preview (one stage ahead): name + BIG tag (bosses have no elements)
 function nextBossLine(scene, x, y, s, size = 14, depth = 0) {
   const n = s + 1, big = isBig(n);
-  const lab = txt(scene, x, y, `${t('nextBoss')}: ${bossName(n)}${big ? ' · ' + t('bigBoss') : ''}`, size, big ? '#ffb08a' : '#c8b49a', { strokeThickness: 4, maxW: 280 });
+  const lab = txt(scene, x, y, `${t('nextBoss')}: ${bossName(n)}${big ? ' · ' + t('bigBoss') : ''}`, size, big ? '#ffb08a' : '#c8b49a', { strokeThickness: 4, maxW: W - 60 });
   if (depth) lab.setDepth(depth);
   window.DC.nextBoss = { name: bossName(n), big };
   return [lab];
@@ -747,10 +740,10 @@ function buildBanner(scene, lines) {
   if (!lines.length) return;
   window.DC.buildBanner = (window.DC.buildBanner || []).concat(lines.map((l) => l[0]));
   lines.forEach(([title, sub, col], i) => scene.time.delayedCall(i * 1500, () => {
-    const X = PLAY_R / 2 + 4, Y = 236, D = 700;   // above the GEAR popup (600)
-    const t1 = txt(scene, X, Y, title, 46, col, { strokeThickness: 10, stroke: '#1a0a04', maxW: 760 }).setDepth(D + 1);
-    const t2 = txt(scene, X, Y + 46, sub, 22, '#fff4d0', { strokeThickness: 6, stroke: '#1a0a04', maxW: 760 }).setDepth(D + 1);
-    const bw = Math.max(t1.displayWidth, t2.displayWidth) + 60, bg = scene.add.rectangle(X, Y + 22, bw, 112, 0x0a0410, 0.82).setStrokeStyle(3, Phaser.Display.Color.HexStringToColor(col).color).setDepth(D);
+    const X = W / 2, Y = 300, D = 700;
+    const t1 = txt(scene, X, Y, title, 34, col, { strokeThickness: 8, stroke: '#1a0a04', maxW: W - 40 }).setDepth(D + 1);
+    const t2 = txtW(scene, X, Y + 26, sub, 18, '#fff4d0', W - 60, { stroke: '#1a0a04' }).setDepth(D + 1);
+    const bw = W - 20, bg = scene.add.rectangle(X, Y + (t2.height + 26) / 2, bw, t2.height + 70, 0x0a0410, 0.88).setStrokeStyle(3, Phaser.Display.Color.HexStringToColor(col).color).setDepth(D);
     const all = [bg, t1, t2]; if (scene.uiCam) all.forEach((q) => scene.uiCam.ignore(q));
     popText(scene, t1, 1); sfx(scene, 'banner', 0.45); burst(scene, X, Y, Phaser.Display.Color.HexStringToColor(col).color, 24, 260, 'px').setDepth(D + 2);
     scene.tweens.add({ targets: all, alpha: 0, delay: 1350, duration: 350, onComplete: () => all.forEach((q) => q.destroy()) });
@@ -779,6 +772,251 @@ function jumpRun(n, seed) {
   }
   R.s = n; R.G.seenN = R.G.items.length; 
   return R;
+}
+
+// ===== PORTRAIT UI (v8): top HUD (hero + POWER + element / combo chips), bottom gear bar, full-screen STATS + GEAR page =====
+// Everything here is drawn by the fixed UI camera (never zoomed / shaken). Tap the HUD -> page; tap a bar slot -> page filtered.
+function ensureHud(sc) { if (!sc.uiCam || !sc.cameras.cameras.includes(sc.uiCam)) hudCamera(sc); }
+function hudAdd(sc, o) { o.__hud = true; o.cameraFilter &= ~sc.uiCam.id; sc.cameras.main.ignore(o); return o; }
+// wrapped, centred text (origin top-centre) for lines that must stay >= FS px instead of shrinking
+// wrapped, centred text (origin top). Own greedy wrap: CJK breaks between characters (punctuation stays on its line), Latin between words
+const WRAP_RE = /[\u3000-\u9fff\uac00-\ud7af\uff00-\uffef][、。，！？：；）」』…·!?,.:;)%]*|[^\s\u3000-\u9fff\uac00-\ud7af\uff00-\uffef]+|\s+/g;
+function wrapTo(o, s, w) {
+  const out = [];
+  String(s).split('\n').forEach((para) => {
+    let cur = '';
+    (para.match(WRAP_RE) || ['']).forEach((tk) => {
+      if (/^\s+$/.test(tk)) { if (cur) cur += ' '; return; }
+      const cand = cur + tk; o.setText(cand);
+      if (o.width > w && cur.trim()) { out.push(cur.trim()); cur = tk; } else cur = cand;
+    });
+    out.push(cur.trim());
+  });
+  o.setText(out.join('\n')); return o;
+}
+function txtW(sc, x, y, s, size, color, w, extra = {}) {
+  const o = sc.add.text(x, y, '', Object.assign({ fontFamily: FONT, fontSize: size + 'px', color, fontStyle: 'bold', stroke: '#140812', strokeThickness: Math.max(4, Math.round(size / 6)), align: 'center' }, extra)).setOrigin(0.5, 0);
+  return wrapTo(o, s, w);
+}
+function bump(sc, o, k = 1.45) { if (!o || !o.active) return; const s0 = o.__s || (o.__s = o.scaleX); sc.tweens.killTweensOf(o); o.setScale(s0 * k); sc.tweens.add({ targets: o, scale: s0, duration: 300, ease: 'Back.out' }); }
+function drawHud(sc) {
+  ensureHud(sc);
+  const D = 70, G = sc.G, S = stats(G.items);
+  if (!sc.hud || !sc.hud.pn.active) {
+    const h = sc.hud = { dyn: [] }, add = (o) => hudAdd(sc, o);
+    add(panel(sc, 6, 6, W - 12, 126, { border: 0xffcf40, alpha: 0.93 }).setDepth(D));
+    add(sc.add.rectangle(44, 44, 62, 62, 0x2a1a30).setStrokeStyle(2, 0xffcf40).setDepth(D));
+    const hi = add(sc.add.image(44, 54, 'hero_idle', 0).setScale(1.6).setDepth(D + 1)); hi.setCrop(14, 8, 36, 36);
+    add(txt(sc, 86, 24, t('power'), 16, '#ffe8a0', { strokeThickness: 4 }).setOrigin(0, 0.5).setDepth(D + 1));
+    const pn = h.pn = sc.powN = add(txt(sc, 86, 55, fmt(sc.powShown !== undefined ? sc.powShown : sc.powV || 0), 34, '#ffd36a', { strokeThickness: 7, stroke: '#2a1404' }).setOrigin(0, 0.5).setDepth(D + 1));
+    pn.__maxW = 196; pn.__size = 34; fitText(pn, 196, 34);
+    const s = sc.s, k0 = Math.floor(s / RULES.bigEvery) * RULES.bigEvery;
+    add(txt(sc, W - 70, 27, t('stageN', s + 1), 22, '#ffd36a', { strokeThickness: 6, stroke: '#1a0a04', maxW: 118 }).setDepth(D + 1));
+    for (let k = 0; k < RULES.bigEvery; k++) {   // pips toward the next BIG BOSS
+      const st = k0 + k, x = W - 114 + k * 22, bg = isBig(st), col = st === s ? 0xffd36a : st < s ? 0x9a7a3a : 0x2a1a24;
+      add(sc.add.rectangle(x, 56, bg ? 13 : 10, bg ? 13 : 10, col).setStrokeStyle(2, bg ? 0xff5a4a : 0xc89a4a).setAngle(45).setDepth(D + 1));
+    }
+    const hit = add(sc.add.rectangle(W / 2, 69, W - 12, 126, 0xffffff, 0.001).setDepth(D + 0.5).setInteractive({ useHandCursor: true }).setData('item', true));
+    hit.on('pointerdown', () => { if (!sc.statsLocked) sc.openGear(null); });
+    sc.powPos = { x: 150, y: 55 };
+  }
+  sc.hud.dyn.forEach((o) => o.destroy()); const dyn = sc.hud.dyn = [], add = (o) => { dyn.push(hudAdd(sc, o)); return o; };
+  const prev = G.hudPrev || {}, cur = {}, step = RULES.elem.step;
+  ELEMENTS.forEach((el, i) => {
+    const x0 = 12 + i * 98, y = 105, lv = S.lv[el], n = S.cnt[el], nx = nextAt(lv), frac = Math.max(0, Math.min(1, (n - lv * step) / step));
+    add(sc.add.rectangle(x0 + 46, y, 92, 42, 0x1a0e1e, 0.95).setStrokeStyle(2, EL_COLOR[el], lv ? 1 : 0.45).setDepth(D + 1));
+    const ic = add(sc.add.image(x0 + 15, y - 4, 'el_' + el).setScale(2).setDepth(D + 2));
+    const lt = add(txt(sc, x0 + 30, y - 5, `${lvW()}${lv}`, 18, lv ? '#ffffff' : EL_CSS[el], { strokeThickness: 4 }).setOrigin(0, 0.5).setDepth(D + 2));
+    add(txt(sc, x0 + 88, y - 5, `${n}/${nx}`, 16, EL_CSS[el], { strokeThickness: 4 }).setOrigin(1, 0.5).setDepth(D + 2));
+    add(sc.add.rectangle(x0 + 6, y + 14, 80, 5, 0x3a2a34).setOrigin(0, 0.5).setDepth(D + 2));
+    if (frac > 0) add(sc.add.rectangle(x0 + 6, y + 14, 80 * frac, 5, EL_COLOR[el]).setOrigin(0, 0.5).setDepth(D + 2));
+    cur['el' + el] = n; if (prev['el' + el] !== undefined && prev['el' + el] !== n) { bump(sc, ic, 1.6); bump(sc, lt, 1.4); }
+  });
+  COMBO_ELS.forEach(([k, a, b], j) => {
+    const x = 316 + j * 37, y = 105, lv = S[k];
+    add(sc.add.rectangle(x + 17, y, 33, 42, lv ? 0x103a18 : 0x1a0e1e, 0.95).setStrokeStyle(2, lv ? 0x7aff8a : 0x5a4a50).setDepth(D + 1));
+    const ia = add(sc.add.image(x + 10, y - 8, 'el_' + a).setScale(1.25).setAlpha(lv ? 1 : 0.35).setDepth(D + 2));
+    add(sc.add.image(x + 24, y - 8, 'el_' + b).setScale(1.25).setAlpha(lv ? 1 : 0.35).setDepth(D + 2));
+    add(txt(sc, x + 17, y + 11, lv ? String(lv) : '–', 16, lv ? '#7aff8a' : '#7a6a7a', { strokeThickness: 3 }).setDepth(D + 2));
+    cur['c' + k] = lv; if (prev['c' + k] !== undefined && prev['c' + k] !== lv) bump(sc, ia, 1.8);
+  });
+  G.hudPrev = cur;
+  window.DC.hud = { el: ELEMENTS.map((e) => [S.lv[e], S.cnt[e]]), combos: COMBO_ELS.map(([k]) => S[k]) };
+}
+const BAR = [['weapon', 0], ['armor', 15], ['accessory', 21], ['cursed', 27], ['gem', -1]];
+function barCounts(G) { const ok = (k) => G.items.filter((x) => x.kind === k && !x.cursed).length; return { weapon: ok('weapon'), armor: ok('armor'), accessory: ok('accessory'), cursed: curses(G).length, gem: G.gems }; }
+function drawBar(sc) {
+  ensureHud(sc);
+  (sc.barObjs || []).forEach((o) => o.destroy()); const objs = sc.barObjs = [], add = (o) => { objs.push(hudAdd(sc, o)); return o; };
+  const D = 70, y = BAR_Y + 31, sw = (W - 12) / 5, cnt = barCounts(sc.G);
+  add(panel(sc, 6, BAR_Y, W - 12, 60, { border: 0xffcf40, alpha: 0.93 }).setDepth(D));
+  sc.barPos = {}; sc.barIcons = {};
+  BAR.forEach(([k, fr], i) => {
+    const cx = 6 + sw * (i + 0.5), n = cnt[k], on = n > 0;
+    if (i) add(sc.add.rectangle(6 + sw * i, y, 1, 36, 0xffcf40, 0.25).setDepth(D + 1));
+    const ic = add((fr < 0 ? sc.add.image(cx - 15, y, 'gem').setScale(2.6) : sc.add.image(cx - 15, y, 'icons', fr).setScale(1.05)).setDepth(D + 1).setAlpha(on ? 1 : 0.4));
+    if (k === 'cursed') ic.setTint(0xc080ff);
+    const ct = add(txt(sc, cx + 6, y, String(n), 22, on ? (k === 'cursed' ? '#ff8acb' : '#ffffff') : '#7a6a7a', { strokeThickness: 5 }).setOrigin(0, 0.5).setDepth(D + 1));
+    const hit = add(sc.add.rectangle(cx, y, sw - 2, 58, 0xffffff, 0.001).setDepth(D + 2).setInteractive({ useHandCursor: true }).setData('item', true));
+    hit.on('pointerdown', () => { if (!sc.statsLocked) sc.openGear(k); });
+    sc.barPos[k] = { x: cx - 15, y }; sc.barIcons[k] = [ic, ct];
+  });
+  window.DC.bar = cnt; window.DC.barPos = sc.barPos;
+}
+function bumpBar(sc, k) { (sc.barIcons && sc.barIcons[k] || []).forEach((o) => bump(sc, o, 1.7)); }
+const barKey = (it) => it.cursed ? 'cursed' : it.kind;
+// ---- the merged STATS + GEAR page ----
+function closeStats(sc) { sc.pageClosedAt = sc.time.now;
+  (sc.pageObjs || []).forEach((o) => o.destroy()); sc.pageObjs = []; sc.pageC = null; sc.gearOpen = false; sc.pageDrag = null;
+  if (sc.tip) sc.tip.hide(true); window.DC.gearOpen = false; window.DC.page = null;
+}
+function openStats(sc, filter = null, keepScroll = false) {
+  if (sc.statsLocked) return;
+  const oldY = sc.pageScroll || 0;
+  closeStats(sc); ensureHud(sc); if (sc.tip) sc.tip.hide(true);
+  sc.gearOpen = true; sc.pageFilter = filter; window.DC.gearOpen = true;
+  const D = 900, objs = sc.pageObjs = [], add = (o) => { objs.push(hudAdd(sc, o)); return o; };
+  const G = sc.G, Y = stats(G.items), TOP = 70;
+  const bg = add(sc.add.rectangle(0, 0, W, H, 0x07040c, 1).setOrigin(0).setDepth(D).setInteractive());
+  bg.on('pointerdown', (p) => { sc.pageDrag = { y: p.y, s0: sc.pageScroll, moved: false }; });
+  // content (scrolls): stats on top, gear list below
+  const c = sc.pageC = add(sc.add.container(0, TOP).setDepth(D + 1));
+  const mg = sc.make.graphics({ add: false }); mg.fillStyle(0xffffff).fillRect(0, TOP - 4, W, H - TOP + 4); objs.push(mg); c.setMask(mg.createGeometryMask());
+  const put = (o) => { hudAdd(sc, o); c.add(o); return o; };
+  const T = (x, y, s, size, col, ox = 0) => put(sc.add.text(x, y, s, { fontFamily: FONT, fontSize: size + 'px', color: col, fontStyle: 'bold', stroke: '#140812', strokeThickness: 4 }).setOrigin(ox, 0.5));
+  const drag = (o) => { o.on('pointerdown', (p) => { sc.pageDrag = { y: p.y, s0: sc.pageScroll, moved: false }; }); return o; };
+  let y = 6;
+  const sect = (label) => { put(sc.add.rectangle(W / 2, y + 12, W - 24, 26, 0x2a1a10, 0.9).setStrokeStyle(1, 0xffcf40, 0.6)); T(W / 2, y + 12, label, 18, '#ffd36a', 0.5); y += 34; };
+  // power
+  T(20, y + 16, t('power'), 18, '#ffe8a0'); T(W - 20, y + 16, fmt(sc.powV || expStrike(G, null, sc.s)), 28, '#ffd36a', 1); y += 40;
+  sect(t('elemT'));
+  ELEMENTS.forEach((el) => {
+    const lv = Y.lv[el], n = Y.cnt[el], nx = nextAt(lv), st = RULES.elem.step, frac = Math.max(0, Math.min(1, (n - lv * st) / st));
+    put(sc.add.image(30, y + 12, 'el_' + el).setScale(2.2));
+    T(50, y + 12, `${elName(el)} ${lvW()}${lv}`, 20, lv ? '#ffffff' : EL_CSS[el]); T(W - 20, y + 12, `${n}/${nx}`, 20, EL_CSS[el], 1);
+    put(sc.add.rectangle(20, y + 32, W - 40, 7, 0x3a2a34).setOrigin(0, 0.5)); if (frac > 0) put(sc.add.rectangle(20, y + 32, (W - 40) * frac, 7, EL_COLOR[el]).setOrigin(0, 0.5));
+    const nr = put(txtW(sc, W / 2, y + 40, `→ ${lvW()}${lv + 1}: ${nextReward(el, lv)}`, 16, '#ffe8a0', W - 40));
+    const row = drag(sc.tip.attach(put(sc.add.rectangle(W / 2, y + 24, W - 24, 48, 0xffffff, 0.001).setData('row', true)), { kind: 'syn', element: el, rarity: 'RARE', name: t('syn')[el] }));
+    y += 46 + nr.height + 8;
+  });
+  sect(t('comboT'));
+  COMBO_ELS.forEach(([k, a, b]) => {
+    const lv = Y[k], L = Math.max(1, lv), need = RULES.elem.step * L, miss = lv ? 0 : Math.max(0, need - Y.cnt[a]) + Math.max(0, need - Y.cnt[b]), on = lv > 0;
+    T(20, y + 12, t('comboN')[k], 20, on ? '#7aff8a' : '#a89ab8');
+    T(W - 20, y + 12, on ? lvW() + lv : t('comboNeed', miss), 18, on ? '#7aff8a' : '#ffb070', 1);
+    let cx = 20; const yy = y + 36, al = on ? 1 : 0.5;
+    put(sc.add.image(cx + 9, yy, 'el_' + a).setScale(1.6).setAlpha(al)); cx += 22; const ta = T(cx, yy, `${need}+`, 16, on ? '#d8ffd8' : '#a89ab8'); cx += ta.width + 4;
+    put(sc.add.image(cx + 9, yy, 'el_' + b).setScale(1.6).setAlpha(al)); cx += 22;
+    T(cx, yy, `${need}: ${t('rwMast', +Math.pow(RULES.combos.res, L).toPrecision(3))}`, 16, on ? '#d8ffd8' : '#a89ab8');
+    drag(sc.tip.attach(put(sc.add.rectangle(W / 2, y + 24, W - 24, 48, 0xffffff, 0.001).setData('row', true)), { kind: 'combo', combo: k, on: lv, rarity: on ? 'LEGENDARY' : 'COMMON', element: 'Fire', name: t('comboN')[k] }));
+    y += 54;
+  });
+  sect(t('statsT'));
+  // execute / echo / greed / permanent: only shown once non-zero (dim hint while all four are 0); curses + gems always
+  const U = [['exec', t('stExec'), pct(Y.execute) + '%', '#ff8ab0', Y.execute], ['echo', t('stEcho'), pct(Y.echo) + '%', '#ffffff', Y.echo], ['greed', t('stGreed'), pct(Y.greed) + '%', '#ffd84a', Y.greed], ['perm', t('stPerm'), '+' + pct(G.perm) + '%', '#ffb0e0', G.perm]].filter((r) => r[4]);
+  const rows = U.concat([['curse', t('stCurses'), String(curses(G).length), curses(G).length ? '#ff6a9a' : '#8a7a8a'], ['gems', t('stGems'), String(G.gems), G.gems ? '#e0b8ff' : '#8a7a8a']]);
+  if (!U.length) { const h = put(txtW(sc, W / 2, y, t('statHint'), 16, '#9a8a9a', W - 40)); y += h.height + 8; }
+  window.DC.statRows = U.map((r) => r[0]);
+  rows.forEach(([key, label, val, col], i) => {
+    const x = i % 2 ? W / 2 + 6 : 20, wd = W / 2 - 26;
+    const lt = T(x, y + 13, label, 18, '#e8dcc8'), vt = T(x + wd, y + 13, val, 18, col, 1); fitText(lt, wd - vt.width - 8, 18);
+    if (key === 'gems') put(sc.add.image(x + wd - vt.width - 14, y + 13, 'gem').setScale(1.5));
+    if (i % 2 || i === rows.length - 1) y += 32;
+  });
+  // GEAR: filter tabs + rows (newest first)
+  y += 8; const gearTop = y; sect(t('gearT') + `  ${G.items.length}`);
+  const tabs = [[null, t('allT')], ['weapon', t('kind').weapon], ['armor', t('kind').armor], ['accessory', t('kind').accessory], ['cursed', t('cursedT')]];
+  const tw = (W - 24) / 5;
+  tabs.forEach(([k, lab], i) => {
+    const x = 12 + tw * (i + 0.5), sel = (filter || null) === k;
+    const r = put(sc.add.rectangle(x, y + 16, tw - 4, 32, sel ? 0x6a4a10 : 0x1a0e1e, 0.95).setStrokeStyle(2, sel ? 0xffd36a : 0x5a4a50).setInteractive({ useHandCursor: true }));
+    if (k) {   // kind tabs: the same icon as the bottom bar + its count (no long words to squeeze)
+      const fr = BAR.find((q) => q[0] === k)[1], ic = put(sc.add.image(x - 14, y + 16, 'icons', fr).setScale(0.75));
+      if (!sel) ic.setAlpha(0.75);
+      T(x + 16, y + 16, String(barCounts(G)[k]), 18, sel ? '#ffe8a0' : '#c8b49a', 0.5);
+    } else { const tl = T(x, y + 16, lab, 16, sel ? '#ffe8a0' : '#c8b49a', 0.5); fitText(tl, tw - 8, 16); }
+    r.on('pointerup', () => { if (sc.pageDrag && sc.pageDrag.moved) return; openStats(sc, k, true); });
+    drag(r);
+  });
+  y += 42;
+  const items = [...G.items].reverse().filter((it) => !filter || barKey(it) === filter), rowH = 54;
+  if (!items.length) { T(W / 2, y + 20, t('noneT'), 18, '#8a7a8a', 0.5); y += 44; }
+  items.forEach((it) => {
+    const boss = it.src === 'boss', yy = y + rowH / 2;
+    const row = drag(sc.tip.attach(put(sc.add.rectangle(W / 2, yy, W - 24, rowH - 4, 0xffffff, 0.001).setData('row', true)), it));
+    if (it.cursed) put(sc.add.rectangle(W / 2, yy, W - 24, rowH - 6, 0x3a0a4a, 0.55));
+    put(sc.add.rectangle(36, yy, 40, 40, itemCol(it), 0.3).setStrokeStyle(2, RARITY[it.rarity].col));
+    const ic = put(sc.add.image(36, yy, 'icons', it.frame).setScale(1.05)); if (it.cursed && it.kind === 'weapon') ic.setTint(0xb070ff);
+    const nm = T(64, yy - 12, it.name, 18, it.cursed ? '#d9a6ff' : RARITY[it.rarity].css); clipText(nm, boss ? W - 136 : W - 84);
+    const rt = T(64, yy + 12, ruleText(it), 16, ruleCol(it)); fitText(rt, W - 84, 16);
+    if (boss) { const b = T(W - 18, yy - 12, t('bossBadge'), 15, '#ffffff', 1); b.setBackgroundColor('#a8281e').setPadding(4, 1, 4, 1).setStroke('#000', 0); }
+    y += rowH;
+  });
+  y += 12; sc.pageH = y;
+  // header (on top of the scrolling content) + close button
+  add(sc.add.rectangle(0, 0, W, TOP - 4, 0x07040c, 1).setOrigin(0).setDepth(D + 2).setInteractive());
+  add(panel(sc, 6, 6, W - 12, TOP - 14, { border: 0xffcf40, alpha: 0.95 }).setDepth(D + 2));
+  add(txt(sc, W / 2 - 22, TOP / 2 - 3, t('pageT'), 22, '#ffd36a', { strokeThickness: 5, maxW: W - 120 }).setDepth(D + 3));
+  const cb = add(sc.add.circle(W - 36, TOP / 2 - 3, 22, 0x8a1c10).setStrokeStyle(3, 0xffd36a).setDepth(D + 3).setInteractive({ useHandCursor: true }));
+  const xg = add(sc.add.graphics().setDepth(D + 4)); xg.lineStyle(5, 0xfff4c8); xg.lineBetween(W - 46, TOP / 2 - 13, W - 26, TOP / 2 + 7); xg.lineBetween(W - 26, TOP / 2 - 13, W - 46, TOP / 2 + 7);
+  cb.on('pointerdown', () => { sfx(sc, 'click'); closeStats(sc); });
+  sc.pageView = H - TOP - 6; sc.pageTop = TOP; sc.pageScroll = 0;
+  pageScrollTo(sc, keepScroll ? oldY : filter ? gearTop : 0);
+  window.DC.page = { filter, rows: items.length, gearTop, h: y, close: { x: W - 36, y: TOP / 2 - 3 } };
+}
+function pageScrollTo(sc, v) {
+  if (!sc.pageC) return; const max = Math.max(0, sc.pageH - sc.pageView);
+  sc.pageScroll = Phaser.Math.Clamp(v, 0, max); sc.pageC.y = sc.pageTop - sc.pageScroll;
+  if (window.DC.page) window.DC.page.scroll = sc.pageScroll;
+}
+const UI = {
+  drawPower() { this.setupGearInput(); this.powV = this.pw(); this.drawStats(); this.setPower(this.powV, false); },
+  drawStats() { drawHud(this); drawBar(this); },
+  drawGems() { this.drawStats(); },
+  setPower(v, anim = true) {
+    if (!this.powN || !this.powN.active) this.drawStats();
+    const cursed = curses(this.G).length > 0, col = cursed ? '#ff5a5a' : '#ffd36a', from = this.powShown || 0, up = v > from * 1.0001;
+    this.powV = v; this.powN.setColor(col); window.DC.power = v; window.DC.powerHud = { text: this.powN.text };
+    if (!anim) { this.powShown = v; setFit(this.powN, fmt(v)); return; }
+    const c = { v: from };
+    this.tweens.add({ targets: c, v, duration: 650, ease: 'Cubic.out', onUpdate: () => { if (this.powN.active) setFit(this.powN, fmt(c.v)); }, onComplete: () => {
+      this.powShown = v; if (!this.powN.active) return; setFit(this.powN, fmt(v)); window.DC.powerHud = { text: this.powN.text };
+      bump(this, this.powN, up ? 1.3 : 0.85);
+      if (up) { const b = burst(this, this.powPos.x, this.powPos.y, 0xffcf40, 18, 200, 'px').setDepth(75); hudAdd(this, b); sfx(this, 'tick', 0.6); }
+    } });
+  },
+  openGear(filter = null) { openStats(this, filter); },
+  closeGear() { closeStats(this); },
+  setupGearInput() {
+    this.input.on('pointermove', (p) => { const d = this.pageDrag; if (!d || !p.isDown || !this.pageC) return; const dy = p.y - d.y; if (Math.abs(dy) > 6) d.moved = true; if (d.moved) { if (this.tip && this.tip.visible) this.tip.hide(true); pageScrollTo(this, d.s0 - dy); } });
+    this.input.on('pointerup', () => { this.time.delayedCall(0, () => { this.pageDrag = null; }); });
+    this.input.on('wheel', (p, over, dx, dy) => { if (this.gearOpen) pageScrollTo(this, this.pageScroll + dy * 0.6); });
+  },
+};
+// fly an item icon into its bottom-bar slot (optional label above it), bump the slot
+function flyToBar(sc, it, from, label, labelCss, done) {
+  const k = barKey(it), to = (sc.barPos || {})[k] || { x: W / 2, y: BAR_Y + 30 };
+  const fly = hudAdd(sc, sc.add.image(from.x, from.y, 'icons', it.frame).setScale(from.s || 2.4).setDepth(76)); if (it.cursed) fly.setTint(0xb070ff);
+  if (label) { const lab = hudAdd(sc, txt(sc, from.x, from.y - 52, label, 22, labelCss || '#ff9a8a', { strokeThickness: 6, stroke: '#2a0404', maxW: W - 40 }).setDepth(77)); popText(sc, lab, 1);
+    sc.tweens.add({ targets: lab, x: Phaser.Math.Clamp(to.x, 90, W - 90), y: to.y - 50, delay: 250, duration: 520, ease: 'Quad.in', onComplete: () => sc.tweens.add({ targets: lab, alpha: 0, delay: 500, duration: 300, onComplete: () => lab.destroy() }) }); }
+  sc.tweens.add({ targets: fly, x: to.x, y: to.y, scale: 1.05, duration: 560, delay: label ? 250 : 0, ease: 'Quad.in', onComplete: () => {
+    fly.destroy(); hudAdd(sc, burst(sc, to.x, to.y, it.src === 'boss' ? 0xff6a5a : 0xffe08a, 16, 170, 'px').setDepth(77)); sfx(sc, 'tick', 0.6);
+    sc.drawStats(); bumpBar(sc, k); window.DC.barBump = (window.DC.barBump || []).concat(k); if (done) done();
+  } });
+}
+// boss info box under the HUD: name (+ BIG BOSS), HP bar with number (+ trailing ghost), next boss
+function bossBox(sc, s, hp, opts = {}) {
+  ensureHud(sc);
+  const c = bossFor(s), big = isBig(s), y = BOSS_Y, D = 60, o = [], add = (q) => { o.push(hudAdd(sc, q).setDepth(D)); return q; };
+  add(panel(sc, 6, y, W - 12, 76, { border: big ? 0xff5a4a : undefined, alpha: 0.9 }));
+  if (big) { const bb = add(txt(sc, 62, y + 18, t('bigBoss'), 16, '#ff6a5a', { strokeThickness: 5, stroke: '#2a0404', maxW: 100 })); sc.tweens.add({ targets: bb, scale: 1.1, yoyo: true, repeat: -1, duration: 420 }); }
+  add(txt(sc, W / 2 + (big ? 30 : 0), y + 18, bossName(s), 20, c.col, { strokeThickness: 5, maxW: big ? W - 150 : W - 40 }));
+  add(sc.add.rectangle(W / 2, y + 44, HPW + 6, 26, 0x220000).setStrokeStyle(3, hasCurse(sc.G, 'hpUp') ? 0xff5a3a : 0xffd36a));
+  const ghost = add(sc.add.rectangle(HPX, y + 44, HPW, 20, 0xffd8a0).setOrigin(0, 0.5));
+  const bar = add(sc.add.rectangle(HPX, y + 44, HPW, 20, 0xd22a2a).setOrigin(0, 0.5));
+  const ht = add(txt(sc, W / 2, y + 44, opts.text || `HP ${fmt(hp)}`, 18, '#ffffff', { strokeThickness: 4, maxW: HPW - 10 }));
+  o.push(...nextBossLine(sc, W / 2, y + 66, s, 16, D).map((q) => hudAdd(sc, q)));
+  return { objs: o, bar, ghost, ht };
 }
 
 class Boot extends Phaser.Scene {
@@ -819,17 +1057,18 @@ class Title extends Phaser.Scene {
   constructor() { super('title'); }
   create() {
     window.DC.phase = 'title'; this.switching = false;
-    backdrop(this, 'bg_lava', 0.2);
-    shadow(this, W / 2 + 120 + 94, LAVA_GROUND, 290); shadow(this, W / 2 - 300, LAVA_GROUND, 90);
-    this.add.sprite(W / 2 + 120, LAVA_GROUND, 'dragon_idle').setScale(4).setOrigin(0.5, 1).play('dragon-idle');
-    heroGlow(this.add.sprite(W / 2 - 300, LAVA_GROUND, 'hero_idle').setScale(3).setOrigin(0.5, 1).play('hero-idle'));
-    panel(this, W / 2 - 330, 22, 660, 170);
-    txt(this, W / 2, 82, t('title'), 80, '#ffd36a', { strokeThickness: 10, maxW: 620 });
-    txt(this, W / 2, 142, t('sub1'), 28, '#ffffff', { maxW: 630 });
-    txt(this, W / 2, 175, t('sub2'), 22, '#ff9a7a', { maxW: 630 });
+    backdrop(this, 'bg_lava', 0.2, 700);
+    shadow(this, W / 2 + 70, 700, 220); shadow(this, 70, 700, 70);
+    this.add.sprite(W / 2 + 40, 700, 'dragon_idle').setScale(2.4).setOrigin(0.5, 1).play('dragon-idle');
+    heroGlow(this.add.sprite(70, 700, 'hero_idle').setScale(2.6).setOrigin(0.5, 1).play('hero-idle'));
+    // title + the rules (wrapped, never shrunk below readable size)
+    const t0 = txt(this, W / 2, 128, t('title'), 54, '#ffd36a', { strokeThickness: 10, maxW: W - 40 });
+    const r1 = txtW(this, W / 2, 0, t('sub1'), 22, '#ffffff', W - 70), r2 = txtW(this, W / 2, 0, t('sub2'), 18, '#ff9a7a', W - 70);
+    r1.y = 172; r2.y = r1.y + r1.height + 8;
+    const bot = r2.y + r2.height + 16; const pg = panel(this, 16, 82, W - 32, bot - 82); pg.setDepth(-1); t0.setDepth(1); r1.setDepth(1); r2.setDepth(1);
     const best = loadBest();
-    if (best.stage) txt(this, W / 2, 222, t('titleBest', best.stage, fmt(best.hit)), 22, '#b8f0a0', { strokeThickness: 5, maxW: 760 });
-    const tap = txt(this, W / 2, 575, t('tapStart'), 40, '#fff2c0', { maxW: 900 });
+    if (best.stage) txt(this, W / 2, bot + 26, t('titleBest', best.stage, fmt(best.hit)), 18, '#b8f0a0', { strokeThickness: 5, maxW: W - 30 });
+    const tap = txt(this, W / 2, 770, t('tapStart'), 30, '#fff2c0', { maxW: W - 40 });
     this.langButton();
     this.tweens.add({ targets: tap, alpha: 0.35, yoyo: true, repeat: -1, duration: 650 });
     this.started = false;
@@ -857,10 +1096,10 @@ class Title extends Phaser.Scene {
   }
   // language switcher (top-right): tap to cycle, choice saved in localStorage
   langButton() {
-    const c = this.add.container(1110, 34).setDepth(100);
+    const c = this.add.container(W - 88, 38).setDepth(100);
     const g = this.add.graphics();
     g.fillStyle(0x140a18, 0.9); g.fillRoundedRect(-78, -22, 156, 44, 10); g.lineStyle(2, 0xd9a441, 1); g.strokeRoundedRect(-78, -22, 156, 44, 10);
-    const label = txt(this, 0, 0, `◀ ${LANG_NAME[LANG]} ▶`, 20, '#fff2c0', { strokeThickness: 4, maxW: 140 });
+    const label = txt(this, 0, 0, `◀ ${LANG_NAME[LANG]} ▶`, 18, '#fff2c0', { strokeThickness: 4, maxW: 146 });
     const hit = this.add.rectangle(0, 0, 156, 44, 0x000000, 0.001).setInteractive({ useHandCursor: true }).setData('lang', true);
     c.add([g, label, hit]);
     window.DC.lang = LANG;
@@ -887,89 +1126,77 @@ class Pick extends Phaser.Scene {
     backdrop(this, 'bg_hoard', 0.45);
     const big = isBig(s), c = bossFor(s);
     this.B = bossEl(s);
-    // centred top HUD: STAGE on the left, boss + HP bar + weakness / resistance on the right, NEXT boss preview below
-    panel(this, W / 2 - 300, 8, 600, 112, { border: big ? 0xff5a4a : undefined });
-    const st = txt(this, W / 2 - 165, big ? 42 : 58, t('stageN', s + 1), 44, '#ffd36a', { strokeThickness: 10, stroke: '#1a0a04', maxW: 250 });
-    window.DC.roundText = st.text;
-    if (big) {
-      const bb = txt(this, W / 2 - 165, 88, t('bigBoss'), 22, '#ff6a5a', { strokeThickness: 6, stroke: '#2a0404', maxW: 250 });
-      this.tweens.add({ targets: bb, scale: 1.12, yoyo: true, repeat: -1, duration: 420 });
-    }
-    txt(this, W / 2 + 135, 30, bossName(s), 22, c.col, { strokeThickness: 5, maxW: 300 });
-    this.add.rectangle(W / 2 + 135, 60, 280, 24, 0x220000).setStrokeStyle(3, 0xffd36a);
-    this.add.rectangle(W / 2 - 3, 60, 276, 18, 0xd22a2a).setOrigin(0, 0.5);
-    this.hpT = txt(this, W / 2 + 135, 60, `HP ${fmt(stageHp(s, this.G))}`, 17, '#ffffff', { strokeThickness: 4 });
-    if (hasCurse(this.G, 'hpUp')) this.add.rectangle(W / 2 + 135, 60, 280, 24).setStrokeStyle(3, 0xff5a3a);
-    nextBossLine(this, W / 2 + 135, 94, s, 14);
-    this.prompt = txt(this, W / 2, 162, t('pickOne'), 38, '#ffffff', { strokeThickness: 8, maxW: 600 }).setAlpha(0);
+    window.DC.roundText = t('stageN', s + 1);
     this.tip = new Tooltip(this, () => this.items);
+    const bx = bossBox(this, s, stageHp(s, this.G)); this.hpT = bx.ht;
+    // the boss waits at the bottom right, the hero bottom left (the arena below the chests)
+    const sc0 = Math.min(c.scale, 170 / c.fw, 150 / c.fh), bxp = W - 24 - c.fw * sc0 / 2;
+    shadow(this, bxp, PICK_GROUND, Math.max(60, c.body[1] * sc0)); const bs = this.add.sprite(bxp, PICK_GROUND, c.tex).setScale(sc0).setOrigin(0.5, 1).play(c.anim); if (c.tint) bs.setTint(c.tint);
+    this.prompt = txt(this, W / 2, 246, t('pickOne'), 30, '#ffffff', { strokeThickness: 7, maxW: W - 40 }).setAlpha(0);
     this.drawPower();
     this.offer = rollOffer(Math.random, s);
     if (window.DC.forceHq) this.offer.forEach((o, i) => { if (o.type === 'normal') o.hq = window.DC.forceHq.includes(i); });   // test hook
     if (window.DC.forceKind0 !== undefined) { const fk = window.DC.forceKind0; window.DC.forceKind0 = undefined; this.offer.forEach((o, i) => { delete o.kind; if (fk && i === fk.i) { o.type = 'normal'; o.kind = fk.kind; if (fk.hq !== undefined) o.hq = fk.hq; } }); }   // test hook
     window.DC.offer = this.offer.map((o) => (o.type === 'dark' ? 'dark:' + o.element : o.element) + (o.hq ? '+hq' : '') + (o.kind ? '+' + o.kind : ''));
     window.DC.hints = () => this.offer.map((o) => o.hint || null);
-    const xs = [W / 2 - 270, W / 2, W / 2 + 270], base = 400;
+    const xs = CHEST_X, base = CHEST_BASE, CW = 138;
+    window.DC.chestXY = xs.map((x) => [x, base - 70]);
     this.chests = this.offer.map((c, i) => {
       const x = xs[i];
-      shadow(this, x, base, 160);
-      const glow = this.add.circle(x, base - 80, 105, EL_COLOR[c.element], 0.16).setBlendMode(Phaser.BlendModes.ADD);
+      shadow(this, x, base, 120);
+      const glow = this.add.circle(x, base - 66, 74, EL_COLOR[c.element], 0.16).setBlendMode(Phaser.BlendModes.ADD);
       this.tweens.add({ targets: glow, scale: 1.1, alpha: 0.26, yoyo: true, repeat: -1, duration: 900 + i * 120 });
-      const dark = c.type === 'dark', B = this.B;
-      const spr = this.add.image(x, base + 12, 'chest_' + chestKey(c)).setScale(5).setOrigin(0.5, 1);
-      // the element emblem floats above the chest (a DARK chest shows its element too)
-      const gem = this.add.image(x, base - 205, 'el_' + c.element).setScale(4.2);
-      this.tweens.add({ targets: gem, y: base - 213, yoyo: true, repeat: -1, duration: 700, ease: 'Sine.inOut' });
-      const label = txt(this, x, base + 32, dark ? t('darkChest') : t('chestEl', elName(c.element)), 28, dark ? '#c9a6ff' : EL_CSS[c.element], { maxW: 250 });
-      // the chest shows just its element (a DARK chest names its element below)
-      // build hint when this chest's element would level up / unlock or level a combo ("Unlocks Melt!", "1 more to Lv2!")
+      const dark = c.type === 'dark';
+      const spr = this.add.image(x, base + 10, 'chest_' + chestKey(c)).setScale(CHEST_SC).setOrigin(0.5, 1);
+      const gem = this.add.image(x, base - 196, 'el_' + c.element).setScale(3);
+      this.tweens.add({ targets: gem, y: base - 202, yoyo: true, repeat: -1, duration: 700, ease: 'Sine.inOut' });
+      const label = txt(this, x, base + 26, dark ? t('darkChest') : t('chestEl', elName(c.element)), 20, dark ? '#c9a6ff' : EL_CSS[c.element], { maxW: CW });
+      // build hint ("Unlocks Melt!", "Ice Lv2!") wrapped under the name; a DARK chest also names its element + warns
       const hint = chestHint(this.G, c.element);
-      const el = txt(this, x, base + 64, (dark ? elName(c.element) + (hint ? ' · ' : '') : '') + (hint ? hint.text : ''), 20, hint ? (hint.combo ? '#7aff8a' : '#ffe27a') : EL_CSS[c.element], { maxW: 250 });
-      if (hint) this.tweens.add({ targets: el, scale: 1.08, yoyo: true, repeat: -1, duration: 520, ease: 'Sine.inOut' });
+      const el = txtW(this, x, base + 40, (dark ? elName(c.element) + (hint ? ' · ' : '') : '') + (hint ? hint.text : ''), 16, hint ? (hint.combo ? '#7aff8a' : '#ffe27a') : EL_CSS[c.element], CW);
+      if (hint) this.tweens.add({ targets: el, alpha: 0.6, yoyo: true, repeat: -1, duration: 520, ease: 'Sine.inOut' });
       c.hint = hint && hint.text;
-      if (dark) { const bh = txt(this, x, base + 92, t('darkHint'), 15, '#d9a6ff', { strokeThickness: 4, maxW: 240 }); el.on('destroy', () => bh.destroy()); this.tweens.add({ targets: bh, alpha: 0.55, yoyo: true, repeat: -1, duration: 700 }); }
-      const zone = this.add.zone(x, base - 80, 220, 300).setInteractive({ useHandCursor: true });
+      if (dark) { const bh = txtW(this, x, base + 44 + el.height, t('darkHint'), 16, '#d9a6ff', CW); el.on('destroy', () => bh.destroy()); this.tweens.add({ targets: bh, alpha: 0.55, yoyo: true, repeat: -1, duration: 700 }); }
+      const zone = this.add.zone(x, base - 90, CW, 270).setInteractive({ useHandCursor: true });
       zone.on('pointerdown', () => this.choose(i));
-      zone.on('pointerover', () => { if (this.locked) return; this.tweens.add({ targets: spr, scale: 5.4, duration: 120 }); glow.setAlpha(0.45); });
-      zone.on('pointerout', () => { if (this.locked) return; this.tweens.add({ targets: spr, scale: 5, duration: 120 }); glow.setAlpha(0.2); });
-      // HIGH QUALITY: better rarity odds (not a guarantee) -> a golden shimmer: rotating rays, gold sparkles, a light sweep on the chest
+      zone.on('pointerover', () => { if (this.locked) return; this.tweens.add({ targets: spr, scale: CHEST_SC * 1.08, duration: 120 }); glow.setAlpha(0.45); });
+      zone.on('pointerout', () => { if (this.locked) return; this.tweens.add({ targets: spr, scale: CHEST_SC, duration: 120 }); glow.setAlpha(0.2); });
+      // HIGH QUALITY: better rarity odds (not a guarantee) -> golden shimmer + a gold tag above the chest
       let hqO = [];
       if (c.hq) {
         const rays = this.add.graphics().setPosition(x, base - 60).setBlendMode(Phaser.BlendModes.ADD);
-        for (let k = 0; k < 10; k++) { const a0 = k * Math.PI / 5; rays.fillStyle(0xffe27a, 0.13); rays.slice(0, 0, 150, a0 - 0.13, a0 + 0.13); rays.fillPath(); }
-            rays.setDepth(0.2); this.tweens.add({ targets: rays, angle: 360, repeat: -1, duration: 9000 });
+        for (let k = 0; k < 10; k++) { const a0 = k * Math.PI / 5; rays.fillStyle(0xffe27a, 0.13); rays.slice(0, 0, 105, a0 - 0.13, a0 + 0.13); rays.fillPath(); }
+        rays.setDepth(0.2); this.tweens.add({ targets: rays, angle: 360, repeat: -1, duration: 9000 });
         this.tweens.add({ targets: rays, alpha: 0.55, yoyo: true, repeat: -1, duration: 800, ease: 'Sine.inOut' });
-        const halo = this.add.circle(x, base - 60, 92, 0xffd84a, 0.18).setBlendMode(Phaser.BlendModes.ADD).setDepth(0.2);
+        const halo = this.add.circle(x, base - 60, 66, 0xffd84a, 0.18).setBlendMode(Phaser.BlendModes.ADD).setDepth(0.2);
         this.tweens.add({ targets: halo, scale: 1.18, alpha: 0.3, yoyo: true, repeat: -1, duration: 650, ease: 'Sine.inOut' });
-        const shine = this.add.image(x, base + 12, 'chest_' + chestKey(c)).setScale(5).setOrigin(0.5, 1).setTintFill(0xfff4c0).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0);
+        const shine = this.add.image(x, base + 10, 'chest_' + chestKey(c)).setScale(CHEST_SC).setOrigin(0.5, 1).setTintFill(0xfff4c0).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0);
         this.tweens.add({ targets: shine, alpha: 0.28, yoyo: true, repeat: -1, duration: 520, repeatDelay: 900, ease: 'Sine.inOut' });
-        const gs = this.add.particles(x, base - 60, 'px', { x: { min: -95, max: 95 }, y: { min: -90, max: 60 }, lifespan: 700, speedY: { min: -40, max: -12 }, scale: { start: 2.2, end: 0 }, frequency: 70, tint: [0xffe27a, 0xffffff, 0xffc040], blendMode: 'ADD' });
-        const tag = txt(this, x, base - 150, t('hqTag'), 18, '#ffe27a', { strokeThickness: 5, stroke: '#4a2a00', maxW: 220 });
-        const pill = this.add.rectangle(x, base - 150, Math.min(230, tag.displayWidth + 26), 30, 0x3a2200, 0.85).setStrokeStyle(2, 0xffd84a);
+        const gs = this.add.particles(x, base - 60, 'px', { x: { min: -66, max: 66 }, y: { min: -70, max: 50 }, lifespan: 700, speedY: { min: -40, max: -12 }, scale: { start: 2.2, end: 0 }, frequency: 70, tint: [0xffe27a, 0xffffff, 0xffc040], blendMode: 'ADD' });
+        const tag = txt(this, x, base - 160, t('hqTag'), 16, '#ffe27a', { strokeThickness: 5, stroke: '#4a2a00', maxW: CW - 14 });
+        const pill = this.add.rectangle(x, base - 160, Math.min(CW, tag.displayWidth + 20), 28, 0x3a2200, 0.9).setStrokeStyle(2, 0xffd84a);
         tag.setDepth(2); pill.setDepth(1.9);
         this.tweens.add({ targets: [tag, pill], scale: 1.07, yoyo: true, repeat: -1, duration: 600, ease: 'Sine.inOut' });
         spr.setDepth(0.5); shine.setDepth(0.6);
         hqO = [rays, halo, shine, gs, tag, pill];
       }
-      // TYPE TAG: a teal "sticker" on the chest front with the promised item type (+ its icon); rarity stays random
+      // TYPE TAG: a teal sticker on the chest front with the promised item type (+ its icon); rarity stays random
       if (c.kind) {
-        const fr = ICONS[c.kind][c.element][0][0], ky = base - 58;
-        const kt = txt(this, x + 14, ky, t('kindTag')[c.kind], 17, '#b8fff0', { strokeThickness: 5, stroke: '#022a24', maxW: 170 });
-        const kw = Math.min(236, kt.displayWidth + 58);
-        const kp = this.add.rectangle(x, ky, kw, 34, 0x063a34, 0.92).setStrokeStyle(3, 0x5affd8);
-        const kg = this.add.rectangle(x, ky, kw + 8, 42, 0x5affd8, 0.0).setStrokeStyle(2, 0x5affd8, 0.6);
-        const ki = this.add.image(x - kw / 2 + 20, ky, 'icons', fr).setScale(0.8);
-        kt.x = ki.x + 16 + kt.displayWidth / 2;
+        const fr = ICONS[c.kind][c.element][0][0], ky = base - 40;
+        const kt = txtW(this, x + 10, 0, t('kindTag')[c.kind], 16, '#b8fff0', CW - 34, { stroke: '#022a24' }); kt.y = ky - kt.height / 2;
+        const kh = Math.max(34, kt.height + 8), kp = this.add.rectangle(x, ky, CW - 4, kh, 0x063a34, 0.94).setStrokeStyle(3, 0x5affd8);
+        const kg = this.add.rectangle(x, ky, CW + 4, kh + 8, 0x5affd8, 0).setStrokeStyle(2, 0x5affd8, 0.6);
+        const ki = this.add.image(x - CW / 2 + 16, ky, 'icons', fr).setScale(0.75);
         kg.setDepth(2.4); kp.setDepth(2.5); ki.setDepth(2.6); kt.setDepth(2.6);
-        this.tweens.add({ targets: kg, scaleX: 1.12, scaleY: 1.3, alpha: { from: 0.9, to: 0 }, repeat: -1, duration: 1100, ease: 'Quad.out' });
+        this.tweens.add({ targets: kg, scaleX: 1.08, scaleY: 1.3, alpha: { from: 0.9, to: 0 }, repeat: -1, duration: 1100, ease: 'Quad.out' });
         this.tweens.add({ targets: ki, angle: { from: -10, to: 10 }, yoyo: true, repeat: -1, duration: 500, ease: 'Sine.inOut' });
         hqO = hqO.concat([kg, kp, ki, kt]);
         window.DC.kindTagPos = { x, y: ky, kind: c.kind, i };
       }
-      const sp = this.add.particles(x, base - 70, 'px', { x: { min: -60, max: 60 }, y: { min: -50, max: 40 }, lifespan: 900, speedY: { min: -30, max: -10 }, scale: { start: 1.5, end: 0 }, frequency: 260, tint: EL_COLOR[c.element], blendMode: 'ADD' });
+      const sp = this.add.particles(x, base - 70, 'px', { x: { min: -46, max: 46 }, y: { min: -40, max: 30 }, lifespan: 900, speedY: { min: -30, max: -10 }, scale: { start: 1.5, end: 0 }, frequency: 260, tint: EL_COLOR[c.element], blendMode: 'ADD' });
       // drop in from above with a bounce; the rest of the chest UI fades in when it lands
       spr.y = -120 - i * 60; [glow, gem, label, el].forEach((o) => o.setAlpha(0)); sp.stop(); hqO.forEach((o) => o.setVisible(false));
-      this.tweens.add({ targets: spr, y: base + 12, duration: 460, delay: 80 + i * 80, ease: 'Bounce.out', onComplete: () => {
+      this.tweens.add({ targets: spr, y: base + 10, duration: 460, delay: 80 + i * 80, ease: 'Bounce.out', onComplete: () => {
         sfx(this, 'open', 0.25); burst(this, x, base, 0xffe0a0, 8, 160, 'px'); sp.start();
         this.tweens.add({ targets: [gem, label, el], alpha: 1, duration: 160 }); glow.setAlpha(0.16);
         hqO.forEach((o) => o.setVisible(true));
@@ -981,241 +1208,15 @@ class Pick extends Phaser.Scene {
     this.time.delayedCall(560, () => {
       this.locked = false; window.DC.pickReady = true;
       this.prompt.setAlpha(1); popText(this, this.prompt, 1);
-      this.tweens.add({ targets: this.prompt, y: 156, yoyo: true, repeat: -1, duration: 420, ease: 'Sine.inOut' });
+      this.tweens.add({ targets: this.prompt, y: 240, yoyo: true, repeat: -1, duration: 420, ease: 'Sine.inOut' });
     });
-    this.input.on('pointerdown', (p, over) => { if (this.canSkip && !over.some((o) => o.getData && o.getData('item'))) this.next(); });
+    this.input.on('pointerdown', (p, over) => { if (this.canSkip && !this.gearOpen && this.time.now - (this.pageClosedAt || -1e9) > 350 && !over.some((o) => o.getData && o.getData('item'))) this.next(); });
   }
-  // hero-side POWER: expected damage of the current gear (synergies + curses included). Not a promise - rolls, crits and chains vary.
+  // the hero waits bottom-left; HUD (POWER, elements, combos) on top, gear counts at the bottom
   drawPower() {
-    const hx = 120;
-    this.hShadow = shadow(this, hx, PICK_GROUND - 2, 80);
-    this.heroS = this.add.sprite(hx, PICK_GROUND, 'hero_idle').setScale(2.4).setOrigin(0.5, 1).play('hero-idle'); heroGlow(this.heroS);
-    this.heroS.setDepth(12); this.hShadow.setDepth(12);
-    this.gemObjs = [];
-    this.statX = STAT_X; this.gx0 = GEAR_X;           // stats panel on the right; the GEAR list expands to its left
-    this.setupGearInput();
-    this.powV = this.pw();
-    this.gearOpen = false; this.inv = []; this.seenN = this.G.seenN || 0;
-    this.statObjs = []; this.drawStats(); this.powN = powerHud(this, this.powV); this.setPower(this.powV, false);
-  }
-  // HERO STATS: compact, always visible during the pick (right column, clear of the 3 chests); changed values flash
-  drawStats() {
-    (this.statObjs || []).forEach((o) => o.destroy()); const o = this.statObjs = [];
-    if (this.statsHidden) return;
-    const G = this.G, Y = stats(G.items), X = this.statX, Wd = 186, D = 14, add = (q) => { o.push(q.setDepth(D)); return q; };
-    const T = (x, y, s, size, col, ox = 0) => add(this.add.text(x, y, s, { fontFamily: FONT, fontSize: size + 'px', color: col, fontStyle: 'bold', stroke: '#140812', strokeThickness: 3 }).setOrigin(ox, 0.5));
-    const stat = [['exec', t('stExec'), pct(Y.execute) + '%', Y.execute ? '#ff8ab0' : '#8a7a8a'], ['echo', t('stEcho'), pct(Y.echo) + '%', Y.echo ? '#ffffff' : '#8a7a8a'],
-      ['greed', t('stGreed'), pct(Y.greed) + '%', Y.greed ? '#ffd84a' : '#8a7a8a'], ['perm', t('stPerm'), '+' + pct(G.perm) + '%', G.perm ? '#ffb0e0' : '#8a7a8a'],
-      ['curse', t('stCurses'), String(curses(G).length), curses(G).length ? '#ff6a9a' : '#8a7a8a'], ['gems', t('stGems'), String(G.gems), G.gems ? '#e0b8ff' : '#8a7a8a', 'gem']];
-    const EH = 64, CH = 40, RH = 21, y0 = STAT_Y, h = 32 + 3 * EH + 8 + 3 * CH + 8 + stat.length * RH + 22;
-    add(panel(this, X, y0, Wd, h, { border: 0xffcf40, alpha: 0.9 }));
-    // the whole panel: hover (desktop) peeks the full GEAR list, tap pins / unpins it
-    const hit = add(this.add.rectangle(X + Wd / 2, y0 + h / 2, Wd, h, 0xffffff, 0.001).setInteractive({ useHandCursor: true }).setData('item', true));
-    hit.on('pointerover', (p) => { if (!p.wasTouch && !this.statsLocked) { this.hoverPow = true; this.openGear(false); } });
-    hit.on('pointerout', (p) => { if (!p.wasTouch) { this.hoverPow = false; this.maybeCloseGear(); } });
-    hit.on('pointerdown', () => { if (this.statsLocked) return; if (this.gearOpen && this.gearPinned) this.closeGear(); else this.openGear(true); });
-    this.statBox = { x: X, y: y0, w: Wd, h };
-    add(txt(this, X + Wd / 2, y0 + 16, t('statsT'), 16, '#ffd36a', { strokeThickness: 4, maxW: Wd - 12 }));
-    add(txt(this, X + Wd / 2, y0 + h - 12, t('gearTap'), 12, '#c8b49a', { strokeThickness: 3, maxW: Wd - 12 }));
-    const prev = G.statPrev || {}, cur = {};
-    const flash = (key, val, y, hh, vt) => {
-      cur[key] = val;
-      if (prev[key] === undefined || prev[key] === val) return;
-      const hl = add(this.add.rectangle(X + Wd / 2, y, Wd - 8, hh, 0xffd36a, 0.4)); hl.setDepth(D - 0.5);
-      this.tweens.add({ targets: hl, alpha: 0.08, yoyo: true, repeat: 2, duration: 380, onComplete: () => hl.setAlpha(0.14) });
-      if (vt) { vt.setScale(1.4); this.tweens.add({ targets: vt, scale: 1, duration: 320, ease: 'Back.out' }); }
-      window.DC.statChanged = (window.DC.statChanged || []).concat(key);
-    };
-    let y = y0 + 32;
-    // ELEMENTS: name + level, items toward the next level (bar), and what the NEXT level gives in plain words
-    ELEMENTS.forEach((el) => {
-      const lv = Y.lv[el], n = Y.cnt[el], nx = nextAt(lv), frac = Math.max(0, Math.min(1, (n - lv * RULES.elem.step) / RULES.elem.step));
-      add(this.add.image(X + 14, y + 8, 'el_' + el).setScale(1.5));
-      const lt = T(X + 26, y + 8, `${elName(el)} ${lvW()}${lv}`, 14, lv ? '#ffffff' : EL_CSS[el]);
-      const vt = T(X + Wd - 10, y + 8, `${n}/${nx}`, 14, EL_CSS[el], 1);
-      fitText(lt, Wd - 46 - vt.displayWidth, 14);
-      add(this.add.rectangle(X + 10, y + 21, Wd - 20, 6, 0x2a1a24).setOrigin(0, 0.5).setStrokeStyle(1, 0x5a4a50));
-      if (frac > 0) add(this.add.rectangle(X + 10, y + 21, (Wd - 20) * frac, 6, EL_COLOR[el]).setOrigin(0, 0.5));
-      // next level: "→ Lv2: dmg ×2" + the element effect it brings, on its own line (readable on phones)
-      const r1 = T(X + 10, y + 35, `→ ${lvW()}${lv + 1}: ${t('rwMast', RULES.elem.mastery)}` + (lv + 1 === 3 ? ' · ' + lv3Name(el) : ''), 13, '#ffe8a0');
-      const r2 = T(X + 22, y + 51, elemLvFx(el, lv + 1), 13, '#e8d8b0');
-      fitText(r1, Wd - 18, 13); fitText(r2, Wd - 30, 13);
-      this.tip.attach(add(this.add.rectangle(X + Wd / 2, y + 20, Wd - 8, EH - 4, 0xffffff, 0.001).setData('row', true)), { kind: 'syn', element: el, rarity: 'RARE', name: t('syn')[el] });
-      flash('el' + el, `${n}/${lv}`, y + 20, EH - 4, vt);
-      y += EH;
-    });
-    add(this.add.rectangle(X + Wd / 2, y - 2, Wd - 16, 1, 0xffcf40, 0.3)); y += 6;
-    // COMBOS: condition + effect ("Melt  [Fire]3+[Ice]3: dmg ×3"), greyed with "need N more" while locked
-    COMBO_ELS.forEach(([k, a, b]) => {
-      const lv = Y[k], L = Math.max(1, lv), need = RULES.elem.step * L, miss = lv ? 0 : Math.max(0, need - Y.cnt[a]) + Math.max(0, need - Y.cnt[b]);
-      const on = lv > 0, col = on ? '#7aff8a' : '#9a8a9a';
-      const lt = T(X + 10, y + 8, t('comboN')[k], 14, col);
-      const vt = T(X + Wd - 10, y + 8, on ? lvW() + lv : t('comboNeed', miss), on ? 14 : 12, on ? '#7aff8a' : '#ffb070', 1);
-      fitText(vt, 90, on ? 14 : 12); fitText(lt, Wd - 26 - vt.displayWidth, 14);
-      let cx = X + 10; const yy = y + 26, al = on ? 1 : 0.55;
-      const ia = add(this.add.image(cx + 6, yy, 'el_' + a).setScale(1.2).setAlpha(al)); cx += 14;
-      const ta = T(cx, yy, `${need}+`, 13, col); cx += ta.displayWidth + 1;
-      const ib = add(this.add.image(cx + 6, yy, 'el_' + b).setScale(1.2).setAlpha(al)); cx += 14;
-      const tb = T(cx, yy, `${need}: ${t('rwMast', +Math.pow(RULES.combos.res, L).toPrecision(3))}`, 13, on ? '#d8ffd8' : '#9a8a9a');
-      fitText(tb, X + Wd - 8 - cx, 13);
-      this.tip.attach(add(this.add.rectangle(X + Wd / 2, y + 16, Wd - 8, CH - 4, 0xffffff, 0.001).setData('row', true)), { kind: 'combo', combo: k, on: lv, rarity: on ? 'LEGENDARY' : 'COMMON', element: 'Fire', name: t('comboN')[k] });
-      flash('c_' + k, on ? 'Lv' + lv : 'off', y + 16, CH - 4, vt);
-      y += CH;
-    });
-    add(this.add.rectangle(X + Wd / 2, y - 2, Wd - 16, 1, 0xffcf40, 0.3)); y += 6;
-    // EXECUTE / ECHO / GREED / PERMANENT only come from armour / accessory affixes: a row is hidden while it is 0 (its slot
-    // stays reserved -> the panel never jumps); the first time it turns on it flashes with a NEW tag. All four 0 -> one dim hint.
-    const zero = { exec: !Y.execute, echo: !Y.echo, greed: !Y.greed, perm: !G.perm }, U = stat.slice(0, 4), seen = G.statSeen = G.statSeen || {};
-    const shownU = U.filter((r) => !zero[r[0]]); U.forEach((r) => { if (zero[r[0]]) cur[r[0]] = r[2]; });
-    const yU = y;
-    if (!shownU.length) {
-      const ht = add(this.add.text(X + Wd / 2, yU + 2 * RH - 2, t('statHint'), { fontFamily: FONT, fontSize: '12px', color: '#9a8a9a', fontStyle: 'bold', stroke: '#140812', strokeThickness: 3, align: 'center', wordWrap: { width: Wd - 20, useAdvancedWrap: true } }).setOrigin(0.5));
-      if (ht.height > 4 * RH - 6) ht.setScale((4 * RH - 6) / ht.height);
-    }
-    window.DC.statRows = shownU.map((r) => r[0]);
-    const drawRow = ([key, label, val, col, gem]) => {
-      const yy = y + RH / 2 - 2;
-      const lt = T(X + 10, yy, label, 13, '#e8dcc8'), vt = T(X + Wd - 10, yy, val, 13, col, 1);
-      fitText(vt, 84, 13); fitText(lt, Wd - 24 - vt.displayWidth - (gem ? 16 : 0), 13);
-      if (zero[key] === false && !seen[key]) {   // just unlocked: NEW tag + highlight
-        seen[key] = 1;
-        const nt = T(X + Wd - 16 - vt.displayWidth, yy, t('statNew'), 11, '#1a0a04', 1); nt.setBackgroundColor('#7aff8a').setPadding(2, 0, 2, 0).setStroke('#000000', 0);
-        this.tweens.add({ targets: nt, alpha: 0, delay: 2600, duration: 600 });
-        if (prev[key] === undefined) prev[key] = '__new';   // force the row flash even on a fresh scene
-        window.DC.statUnlocked = (window.DC.statUnlocked || []).concat(key);
-      }
-      if (gem) { add(this.add.image(X + Wd - 26 - vt.displayWidth, yy, 'gem').setScale(1.1)); this.tip.attach(add(this.add.rectangle(X + Wd / 2, yy, Wd - 8, RH - 2, 0xffffff, 0.001).setData('row', true)), { kind: 'gem', rarity: 'EPIC', element: 'Ice', name: t('gemT') }); GEM_ROW.x = X + Wd - 16; GEM_ROW.y = yy; }
-      flash(key, val, yy, RH - 2, vt);
-      y += RH;
-    };
-    shownU.forEach(drawRow); y = yU + 4 * RH; stat.slice(4).forEach(drawRow);
-    G.statPrev = cur; window.DC.stats = cur;
-  }
-  drawGems() { this.drawStats(); }
-  // shared pointer handling for the GEAR list (drag / wheel scroll, tap outside closes)
-  setupGearInput() {
-    this.input.on('pointerdown', (p, over) => { if (this.gearOpen && !over.length && !this.inPopup(p)) this.closeGear(); });
-    this.input.on('pointermove', (p) => {
-      if (this.drag && p.isDown) { const dy = p.worldY - this.drag.y; if (Math.abs(dy) > 6) this.drag.moved = true; if (this.drag.moved) { if (this.tip.visible) this.tip.hide(true); } if (this.drag.moved) this.scrollTo(this.drag.s0 - dy * (this.drag.thumb ? this.contentH / this.vh : 1)); }
-      if (this.gearOpen && !this.gearPinned && !p.wasTouch) this.maybeCloseGear(0);
-    });
-    this.input.on('pointerup', () => { this.drag = null; });
-    this.input.on('wheel', (p, over, dx, dy) => { if (this.gearOpen && this.inPopup(p)) this.scrollTo(this.scrollY + dy * 0.6); });
-  }
-  setPower(v, anim = true) {
-    const cursed = curses(this.G).length > 0, col = cursed ? '#ff5a5a' : '#ffd36a', from = this.powShown || 0, up = v > from * 1.0001;
-    this.powV = v; this.powN.setColor(col); window.DC.power = v;
-    if (!anim || !this.powN) { this.powShown = v; if (this.powN) setFit(this.powN, fmt(v)); return; }
-    const c = { v: from };
-    this.tweens.add({ targets: c, v, duration: 650, ease: 'Cubic.out', onUpdate: () => { if (this.powN.active) setFit(this.powN, fmt(c.v)); }, onComplete: () => {
-      this.powShown = v; if (!this.powN.active) return; setFit(this.powN, fmt(v));
-      this.tweens.killTweensOf(this.powN); this.powN.setScale(up ? 1.45 : 0.8);
-      this.tweens.add({ targets: this.powN, scale: 1, duration: 260, ease: 'Back.out' });
-      if (up) { burst(this, this.powPos.x, this.powPos.y, 0xffcf40, 24, 220, 'px').setDepth(30); sfx(this, 'tick', 0.6); }
-      else { this.cameras.main.shake(160, 0.006); }
-    } });
-  }
-  // ---- gear popup: EVERY item (newest at the top), scrollable with wheel / drag / scrollbar; whole-row tooltips ----
-  inPopup(p) { const g = this.gx0; return this.gearOpen && p.worldX >= g - 18 && p.worldX <= g + 316 && p.worldY >= 116 && p.worldY <= (this.popBottom || 610); }
-  openGear(pin) {
-    if (pin) this.gearPinned = true;
-    if (this.peekT) { this.peekT.remove(); this.peekT = null; if (this.gearOpen) { this.gearOpen = false; this.inv.forEach((o) => o.destroy()); this.inv = []; } }
-    if (this.gearOpen) return; this.gearOpen = true; this.renderGear(); window.DC.gearOpen = true;
-  }
-  maybeCloseGear(ms = 160) {
-    this.time.delayedCall(ms, () => {
-      if (this.gearPinned || !this.gearOpen || this.peekT || this.drag) return;
-      const p = this.input.activePointer, B = this.statBox || { x: 0, y: 0, w: 0, h: 0 }, inPow = p.worldX >= B.x && p.worldX <= B.x + B.w && p.worldY >= B.y && p.worldY <= B.y + B.h;
-      if (!this.inPopup(p) && !inPow) this.closeGear();
-    });
-  }
-  closeGear() {
-    this.gearOpen = false; this.gearPinned = false; if (this.peekT) { this.peekT.remove(); this.peekT = null; }
-    this.inv.forEach((o) => o.destroy()); this.inv = []; this.rows = []; this.rowObjs = []; if (this.tip) this.tip.hide(true); window.DC.gearOpen = false;
-  }
-  // peek = a short auto-closing view right after a pick so the new item can be seen sliding in at the top
-  renderGear(peek = false) {
-    this.inv.forEach((o) => o.destroy()); this.inv = []; this.rows = []; this.rowObjs = [];
-    if (!this.gearOpen) return;
-    const x0 = this.gx0, G = this.G, D = 600, add = (o) => { this.inv.push(o); return o; };
-    const items = [...G.items].reverse(), rowH = this.rowH = 37, top = 182;
-    const fresh = Math.max(0, Math.min(3, items.length, G.items.length - this.seenN));   // at most the 3 newest slide in
-    const vh = this.vh = peek ? Math.min(6, Math.max(1, items.length)) * rowH : 370, bottom = this.popBottom = top + vh + (peek ? 8 : 16);
-    const bg = add(panel(this, x0 - 18, 116, 334, bottom - 116, { border: 0xffcf40, alpha: 0.96 }));
-    const hit = add(this.add.rectangle(x0 + 149, (116 + bottom) / 2, 334, bottom - 116, 0xffffff, 0.001).setInteractive().setData('item', true));
-    hit.on('pointerover', () => { this.hoverPop = true; }); hit.on('pointerout', () => { this.hoverPop = false; this.maybeCloseGear(); });
-    hit.on('pointerdown', (p) => { this.drag = { y: p.worldY, s0: this.scrollY, moved: false }; });
-    add(txt(this, x0 + 149, 134, t('gearT') + `  ${items.length}`, 20, '#ffd36a', { strokeThickness: 5, maxW: 300 }));
-    const nc = curses(G).length;
-    add(txt(this, x0 + 149, 156, t('gearCount', ofKind(G, 'weapon').filter((x) => !x.cursed).length, ofKind(G, 'armor').filter((x) => !x.cursed).length, ofKind(G, 'accessory').filter((x) => !x.cursed).length) + (nc ? ` · ${t('cursedN', nc)}` : ''), 13, nc ? '#ffb0d0' : '#c8b49a', { strokeThickness: 3, maxW: 310 }));
-    // element levels, combos and key stats live in the compact stats panel next to this list (no duplicates here)
-    const Y = stats(G.items); window.DC.combosOn = ['melt', 'superconduct', 'overload'].filter((c) => Y[c]);
-    add(this.add.rectangle(x0 + 149, top - 8, 310, 2, 0xffcf40, 0.4));
-    // the list lives in a masked container; rows outside the viewport are not interactive
-    const list = this.listC = add(this.add.container(0, top));
-    const mg = this.make.graphics({ add: false }); mg.fillStyle(0xffffff).fillRect(x0 - 16, top, 330, vh); this.inv.push(mg);
-    list.setMask(mg.createGeometryMask());
-    items.forEach((it, i) => this.addInvRow(list, i * rowH + rowH / 2, it, i < fresh));
-    this.contentH = items.length * rowH; this.scrollY = 0; this.listTop = top;
-    // scrollbar
-    if (this.contentH > vh) {
-      add(this.add.rectangle(x0 + 309, top + vh / 2, 6, vh, 0xffffff, 0.12));
-      const th = Math.max(24, vh * vh / this.contentH);
-      this.thumb = add(this.add.rectangle(x0 + 309, top + th / 2, 8, th, 0xffcf40, 0.8).setInteractive({ useHandCursor: true }).setData('item', true));
-      this.thumb.on('pointerdown', (p) => { this.drag = { y: p.worldY, s0: this.scrollY, moved: true, thumb: true }; });
-      this.thumbH = th;
-    } else this.thumb = null;
-    // new items: slide in at the top with a highlight; the older rows shift down into place
-    if (fresh) {
-      this.rowObjs.forEach((r) => {
-        if (r.i < fresh && r.boss) { r.c.y -= 30; r.c.alpha = 0; this.tweens.add({ targets: r.c, y: r.c.y + 30, alpha: 1, delay: 560 + r.i * 90, duration: 480, ease: 'Bounce.out' }); }   // boss drop: drops in after the icon lands
-        else if (r.i < fresh) { r.c.x = -330; r.c.alpha = 0; this.tweens.add({ targets: r.c, x: 0, alpha: 1, delay: 120 + r.i * 90, duration: 380, ease: 'Back.out' }); }
-        else { r.c.y -= fresh * rowH; this.tweens.add({ targets: r.c, y: r.c.y + fresh * rowH, delay: 60, duration: 360, ease: 'Cubic.out' }); }
-      });
-      window.DC.slideIn = (window.DC.slideIn || 0) + fresh;
-    }
-    this.seenN = this.G.seenN = G.items.length;
-    this.inv.forEach((o) => { if (o.depth < D) o.setDepth(D + (o === bg ? 0 : 1)); });
-    this.updateRowInput();
-    window.DC.bagRows = this.rows; window.DC.gear = gearSummary(G); window.DC.gearScroll = { y: 0, max: Math.max(0, this.contentH - vh), vh, rows: items.length };
-  }
-  addInvRow(list, y, it, fresh) {
-    const x0 = this.gx0, bx = 32, c = this.add.container(0, y), rH = this.rowH;
-    // the WHOLE row (icon + name + numbers) is the hover / tap target; height rowH-2 so neighbouring rows never overlap
-    const row = this.add.rectangle(x0 + 147, 0, 296, rH - 2, 0xffffff, 0.001).setData('row', true);
-    this.tip.attach(row, it);
-    row.on('pointerdown', (p) => { this.drag = { y: p.worldY, s0: this.scrollY, moved: false }; });
-    const parts = [row];
-    if (it.cursed) parts.push(this.add.rectangle(x0 + 147, 0, 296, rH - 4, 0x3a0a4a, 0.55));
-    const boss = it.src === 'boss';
-    if (fresh) { const hl = this.add.rectangle(x0 + 147, 0, 296, rH - 4, boss ? 0xff7a6a : 0xffe6a0, 0.35).setStrokeStyle(2, boss ? 0xff5a4a : 0xffd36a); parts.push(hl); this.tweens.add({ targets: hl, alpha: 0, delay: 1300, duration: 900 }); }
-    parts.push(this.add.rectangle(x0 + 21, 0, bx, bx, itemCol(it), 0.3).setStrokeStyle(2, RARITY[it.rarity].col));
-    const ic = this.add.image(x0 + 21, 0, 'icons', it.frame).setScale(0.86); if (it.cursed && it.kind === 'weapon') ic.setTint(0xb070ff); parts.push(ic);
-    parts.push(clipText(this.add.text(x0 + 44, -15, it.name, { fontFamily: FONT, fontSize: '14px', color: it.cursed ? '#d9a6ff' : RARITY[it.rarity].css, fontStyle: 'bold' }), fresh || boss ? 200 : 250));
-    const rt = this.add.text(x0 + 44, 1, ruleText(it), { fontFamily: FONT, fontSize: '14px', color: ruleCol(it) });
-    fitText(rt, boss ? 200 : 250, 14); parts.push(rt);
-    if (boss && !fresh) parts.push(txt(this, x0 + 276, 9, t('bossBadge'), 11, '#ffffff', { strokeThickness: 0 }).setBackgroundColor('#a8281e').setPadding(3, 1, 3, 1));
-    if (fresh) parts.push(txt(this, x0 + 276, -9, boss ? t('bossDrop') : t('newTag'), 12, '#1a0a04', { strokeThickness: 0, maxW: 90 }).setBackgroundColor(boss ? '#ff9a8a' : '#ffd36a').setPadding(3, 1, 3, 1));
-    c.add(parts); list.add(c);
-    this.rowObjs.push({ c, row, y, i: this.rowObjs.length, boss: it.src === 'boss' });
-    this.rows.push({ x: x0 + 147, y: this.listTop + y, w: 296, h: rH - 2, kind: it.kind, cursed: !!it.cursed });
-  }
-  scrollTo(v) {
-    if (!this.gearOpen || !this.listC) return;
-    const max = Math.max(0, this.contentH - this.vh); this.scrollY = Phaser.Math.Clamp(v, 0, max);
-    this.listC.y = this.listTop - this.scrollY;
-    if (this.thumb) this.thumb.y = this.listTop + this.thumbH / 2 + (this.vh - this.thumbH) * (max ? this.scrollY / max : 0);
-    this.updateRowInput();
-    window.DC.gearScroll = { y: this.scrollY, max, vh: this.vh, rows: this.rowObjs.length };
-  }
-  updateRowInput() { // only rows inside the viewport take the pointer (the mask hides the rest)
-    (this.rowObjs || []).forEach((r) => {
-      const yy = this.listTop - (this.scrollY || 0) + r.y, vis = yy > this.listTop - 2 && yy < this.listTop + this.vh + 2;
-      if (r.row.input) r.row.input.enabled = vis;
-      r.vy = yy;
-    });
-    this.rows = (this.rowObjs || []).filter((r) => r.row.input && r.row.input.enabled).map((r) => ({ x: r.row.x, y: r.vy, w: 296, h: this.rowH - 2 }));
-    window.DC.bagRows = this.rows;
+    this.hShadow = shadow(this, 64, PICK_GROUND - 2, 70);
+    this.heroS = this.add.sprite(64, PICK_GROUND, 'hero_idle').setScale(2.2).setOrigin(0.5, 1).play('hero-idle'); heroGlow(this.heroS);
+    UI.drawPower.call(this);
   }
   forcedItem(ch) { // test hook: DC.force = a rarity name (+ DC.forceKind) | 'CURSED' | 'GEM'
     const f = window.DC.force; if (!f) return null; window.DC.force = null;
@@ -1242,7 +1243,7 @@ class Pick extends Phaser.Scene {
     const it = nameItem(raw); window.DC.pickedKind = { tag: ch.c.kind || null, got: it.kind };
     const tier = it.rarity, R = RARITY[tier], big = BIG_R[tier], leg = LEG_R[tier];
     window.DC.reveal = { rarity: tier, stage: 'anticipation' };
-    this.tweens.killTweensOf([ch.spr, ch.glow]); ch.spr.setScale(5).setDepth(11); ch.glow.setDepth(11);
+    this.tweens.killTweensOf([ch.spr, ch.glow]); ch.spr.setScale(CHEST_SC).setDepth(11); ch.glow.setDepth(11);
     // colour hint: the chest glow shifts to the rarity colour while it charges
     const hint = tier === 'COMMON' ? EL_COLOR[ch.c.element] : R.col;
     ch.glow.setAlpha(0);
@@ -1280,9 +1281,10 @@ class Pick extends Phaser.Scene {
       o.spr.setTexture('open_' + chestKey(o.c)).setTint(0x6a6a6a);
       this.tweens.add({ targets: o.spr, angle: { from: -6, to: 0 }, duration: 160 });
       const ic = this.add.image(o.x, o.y + 10, 'icons', miss.frame).setScale(1.2).setTint(0x8a8a8a).setAlpha(0.9).setDepth(5);
-      const rt = txt(this, o.x, o.y - 158, ruleText(miss), 18, '#a8a0b0', { strokeThickness: 4, maxW: 230 }).setDepth(5).setAlpha(0);
-      const ms = txt(this, o.x, o.y - 182, t('missed'), 16, '#8a7a9a', { strokeThickness: 3, maxW: 230 }).setDepth(5).setAlpha(0);
-      this.tweens.add({ targets: ic, y: o.y - 110, scale: 2.2, duration: 260, ease: 'Back.out' });
+      this.tweens.add({ targets: [o.label, o.el], alpha: 0, duration: 120 });
+      const ms = txt(this, o.x, CHEST_BASE + 26, t('missed'), 16, '#a89ab8', { strokeThickness: 4, maxW: 136 }).setDepth(5).setAlpha(0);
+      const rt = txtW(this, o.x, CHEST_BASE + 40, ruleText(miss), 16, '#b8b0c0', 136).setDepth(5).setAlpha(0);
+      this.tweens.add({ targets: ic, y: o.y - 60, scale: 2, duration: 260, ease: 'Back.out' });
       this.tweens.add({ targets: [rt, ms], alpha: 1, duration: 180, delay: 120 });
       // sink + fade
       this.time.delayedCall(750, () => {
@@ -1315,7 +1317,7 @@ class Pick extends Phaser.Scene {
     window.DC.reveal = { rarity: tier, stage: 'pop' };
     ch.spr.setTexture('open_' + chestKey(ch.c));
     this.tweens.killTweensOf(ch.soft); ch.soft.setScale(big ? 4 : 2.5).setAlpha(1); this.tweens.add({ targets: ch.soft, scale: big ? 2.75 : 2, alpha: 0.55, duration: 900, ease: 'Quad.out' });
-    const iy = ch.y - (big ? 170 : 150), D = 13;
+    const iy = ch.y - (big ? 130 : 120), D = 13;
     // hit-stop: freeze a beat on the pop (bigger = longer), then slow motion
     if (big) {
       this.tweens.pauseAll(); this.anims.pauseAll();
@@ -1360,8 +1362,8 @@ class Pick extends Phaser.Scene {
     // legendary: coin + confetti shower
     if (leg) {
       const cols = [0xffcf40, 0xff5a8a, 0x5ad2ff, 0x8aff7a, 0xd58cff, 0xffffff];
-      const coins = this.add.particles(0, -20, 'coin', { x: { min: 20, max: 1180 }, lifespan: 2200, speedY: { min: 120, max: 260 }, speedX: { min: -40, max: 40 }, gravityY: 260, rotate: { min: 0, max: 360 }, scale: { min: 1.4, max: 2.2 }, frequency: 28 / lite, quantity: 1 }).setDepth(D + 3);
-      const conf = this.add.particles(0, -20, 'conf', { x: { min: 20, max: 1180 }, lifespan: 2600, speedY: { min: 80, max: 200 }, speedX: { min: -80, max: 80 }, gravityY: 140, rotate: { start: 0, end: 720 }, scale: { min: 1.5, max: 2.5 }, tint: cols, frequency: 22 / lite, quantity: 1 }).setDepth(D + 3);
+      const coins = this.add.particles(0, -20, 'coin', { x: { min: 10, max: W - 10 }, lifespan: 2200, speedY: { min: 120, max: 260 }, speedX: { min: -40, max: 40 }, gravityY: 260, rotate: { min: 0, max: 360 }, scale: { min: 1.4, max: 2.2 }, frequency: 28 / lite, quantity: 1 }).setDepth(D + 3);
+      const conf = this.add.particles(0, -20, 'conf', { x: { min: 10, max: W - 10 }, lifespan: 2600, speedY: { min: 80, max: 200 }, speedX: { min: -80, max: 80 }, gravityY: 140, rotate: { start: 0, end: 720 }, scale: { min: 1.5, max: 2.5 }, tint: cols, frequency: 22 / lite, quantity: 1 }).setDepth(D + 3);
       this.time.delayedCall(1700, () => { coins.stop(); conf.stop(); });
       this.time.delayedCall(4600, () => { coins.destroy(); conf.destroy(); });
     }
@@ -1381,10 +1383,8 @@ class Pick extends Phaser.Scene {
     // rarity banner with a shine sweep
     if (big) {
       this.time.delayedCall(leg ? 260 : 200, () => {
-        const label = tier === 'MYTHIC' ? t('banMyth') : leg ? t('banLeg') : t('banEpic'), size = leg ? 66 : 70;
-        const bw = Math.min(820, label.length * size * (CJK_FONT[LANG] ? 1 : 0.62));
-        const bx = Phaser.Math.Clamp(ch.x, bw / 2 + 12, W - 12 - bw / 2);
-        const ban = txt(this, bx, ch.y + 64, label, size, R.css, { strokeThickness: 12, stroke: leg ? '#4a2400' : '#2a0a40', maxW: 820 }).setDepth(D + 5);
+        const label = tier === 'MYTHIC' ? t('banMyth') : leg ? t('banLeg') : t('banEpic'), size = 46;
+        const ban = txt(this, W / 2, ch.y + 70, label, size, R.css, { strokeThickness: 10, stroke: leg ? '#4a2400' : '#2a0a40', maxW: W - 24 }).setDepth(D + 5);
         try { if (ban.preFX) { ban.preFX.addShine(leg ? 0.9 : 0.7, 0.35, 4); ban.preFX.addGlow(R.col, 4, 0, false, 0.1, 10); } } catch (e) {}
         popText(this, ban, 1); sfx(this, 'banner', 0.7);
         this.tweens.add({ targets: ban, angle: { from: -4, to: 4 }, yoyo: true, repeat: -1, duration: 500, ease: 'Sine.inOut' });
@@ -1394,14 +1394,17 @@ class Pick extends Phaser.Scene {
     }
     // item card with the item's own damage rule
     this.time.delayedCall(big ? (leg ? 700 : 560) : 0, () => {
-      const card = this.add.container(W / 2, 540).setDepth(20);
-      const pg = panel(this, -330, -62, 660, 124, { border: R.col });
-      const tag = txt(this, -250, -38, t('rar')[tier], 16, R.css, { strokeThickness: 4, maxW: 130 });
-      const t1 = txt(this, 40, -36, it.name, 28, it.cursed ? '#d9a6ff' : EL_CSS[it.element], { maxW: 480 });
-      const t2 = txt(this, 0, 2, ruleText(it), 32, ruleCol(it), { maxW: 620 });
-      const t3 = txt(this, 0, 38, ev.type === 'curse' ? `${evText(ev)}  ${t('curseNote')}` : it.kind === 'weapon' ? `${evText(ev)}  ·  ${t('wNote')}` : `${evText(ev)}  ·  ${t('noCrit')}`, 20, EV_CSS[ev.type], { strokeThickness: 4, maxW: 630 });
-      card.add([pg, tag, t1, t2, t3]); card.setAlpha(0);
-      if (it.greedy) { const gt = txt(this, 250, -74, t('greedPop'), 16, '#ffd84a', { strokeThickness: 4, maxW: 150 }); card.add(gt); window.DC.greedy = (window.DC.greedy || 0) + 1; }
+      // item card (portrait: full width, below the chests; wraps instead of shrinking)
+      const CWd = W - 20, card = this.add.container(W / 2, CARD_Y).setDepth(20);
+      const tag = txt(this, -CWd / 2 + 60, 0, t('rar')[tier], 16, R.css, { strokeThickness: 4, maxW: 108 });
+      const t1 = txt(this, 54, 0, it.name, 22, it.cursed ? '#d9a6ff' : EL_CSS[it.element], { maxW: CWd - 140 });
+      const t2 = txtW(this, 0, 0, ruleText(it), 22, ruleCol(it), CWd - 24);
+      const t3 = txtW(this, 0, 0, ev.type === 'curse' ? `${evText(ev)}  ${t('curseNote')}` : it.kind === 'weapon' ? `${evText(ev)} · ${t('wNote')}` : `${evText(ev)} · ${t('noCrit')}`, 16, EV_CSS[ev.type], CWd - 24);
+      const h = 14 + 26 + 6 + t2.height + 6 + t3.height + 12;
+      tag.y = t1.y = -h / 2 + 14 + 13; t2.y = -h / 2 + 46; t3.y = t2.y + t2.height + 6;
+      const pg = panel(this, -CWd / 2, -h / 2, CWd, h, { border: R.col });
+      card.add([pg, tag, t1, t2, t3]); card.setAlpha(0); window.DC.cardBox = { y: CARD_Y - h / 2, h };
+      if (it.greedy) { const gt = txt(this, CWd / 2 - 80, -h / 2 - 10, t('greedPop'), 16, '#ffd84a', { strokeThickness: 4, maxW: 150 }); card.add(gt); window.DC.greedy = (window.DC.greedy || 0) + 1; }
       this.tweens.add({ targets: card, alpha: 1, duration: 150 }); popText(this, card, 1);
     });
     // the item flies into the GEAR panel; merge / upgrade / salvage / curse animate there
@@ -1415,39 +1418,34 @@ class Pick extends Phaser.Scene {
   gearEvent(ev, icon) {
     window.DC.event = { type: ev.type, n: ev.n, gem: ev.gem, purified: ev.purified.map((p) => p.curse), curse: ev.item.curse || null };
     const it = ev.item, N = (n) => Math.max(4, Math.round(n * (this.scale.displaySize.width < 700 ? 0.6 : 1)));
-    const tx = this.powPos.x, ty = this.powPos.y, col = EV_COL[ev.type];
-    const fly = this.add.image(icon.x, icon.y, 'icons', it.frame).setScale(2).setDepth(40); if (it.cursed) fly.setTint(0xb070ff);
-    this.tweens.add({ targets: fly, x: tx, y: ty, scale: 0.5, alpha: 0.3, duration: 420, ease: 'Quad.in', onComplete: () => {
-      fly.destroy(); burst(this, tx, ty, col, N(20), 200, 'px').setDepth(40);
-      const lab = txt(this, this.statX + 93, this.statBox ? this.statBox.y + this.statBox.h + 22 : 136, evText(ev), 22, EV_CSS[ev.type], { strokeThickness: 6, maxW: 240 }).setDepth(41);
+    const col = EV_COL[ev.type];
+    // the item flies down into its bottom-bar slot (count bumps); POWER rolls to the new expected damage
+    const after = () => {
+      this.hpT.setText(`HP ${fmt(stageHp(this.s, this.G))}`).setColor(hasCurse(this.G, 'hpUp') ? '#ffb0a0' : '#ffffff');
+      this.setPower(this.pw()); this.drawStats();
+    };
+    flyToBar(this, it, { x: icon.x, y: icon.y, s: icon.scaleX * 0.8 }, null, null, () => {
+      window.DC.gearPeek = true;
+      const lab = hudAdd(this, txt(this, W / 2, BAR_Y - 30, evText(ev), 22, EV_CSS[ev.type], { strokeThickness: 6, maxW: W - 30 }).setDepth(41));
       popText(this, lab, 1); sfx(this, ev.type === 'curse' ? 'curse' : 'tick', 0.55);
       this.tweens.add({ targets: lab, y: lab.y - 30, alpha: 0, delay: 1100, duration: 400, onComplete: () => lab.destroy() });
-      const after = () => {
-        this.drawGems();
-        this.hpT.setText(`HP ${fmt(stageHp(this.s, this.G))}`).setColor(hasCurse(this.G, 'hpUp') ? '#ffb0a0' : '#ffffff');
-        this.setPower(this.pw()); this.drawStats();
-      };
       after();
       if (this.ups && this.ups.length) { buildBanner(this, this.ups); this.ups = null; }
-      if (ev.gem) { // the gem pops out of the item and flies to its counter
-        const g = this.add.image(icon.x, icon.y, 'gem').setScale(3).setDepth(42);
-        const gl = txt(this, icon.x, icon.y - 60, t('evGem'), 22, EV_CSS.gem, { strokeThickness: 6, maxW: 300 }).setDepth(42);
+      if (ev.gem) { // the gem pops out and flies to its bar counter
+        const gp = (this.barPos || {}).gem || { x: W - 40, y: BAR_Y + 30 };
+        const g = hudAdd(this, this.add.image(W / 2, CARD_Y - 120, 'gem').setScale(3).setDepth(42));
+        const gl = hudAdd(this, txt(this, W / 2, CARD_Y - 170, t('evGem'), 22, EV_CSS.gem, { strokeThickness: 6, maxW: W - 30 }).setDepth(42));
         popText(this, gl, 1); sfx(this, 'rare', 0.6);
         this.tweens.add({ targets: gl, alpha: 0, y: gl.y - 24, delay: 1100, duration: 400, onComplete: () => gl.destroy() });
-        this.tweens.add({ targets: g, x: GEM_ROW.x, y: GEM_ROW.y, scale: 1.6, duration: 520, delay: 200, ease: 'Quad.in', onComplete: () => { g.destroy(); burst(this, GEM_ROW.x, GEM_ROW.y, 0xd08aff, N(16), 160, 'px').setDepth(42); } });
+        this.tweens.add({ targets: g, x: gp.x, y: gp.y, scale: 1.4, duration: 520, delay: 200, ease: 'Quad.in', onComplete: () => { g.destroy(); hudAdd(this, burst(this, gp.x, gp.y, 0xd08aff, N(16), 160, 'px').setDepth(42)); bumpBar(this, 'gem'); } });
       }
-      ev.purified.forEach((p, k) => this.time.delayedCall((ev.gem ? 760 : 380) + k * 500, () => { purifyFx(this, p, this.statX + 93, 300, 60); after(); }));
-      // peek: the list opens briefly so the new item slides in at the top (a pinned / hovered list just re-renders)
-      if (this.gearOpen) this.renderGear();
-      else if (!this.done) {
-        this.gearOpen = true; this.renderGear(true); window.DC.gearPeek = true;
-        this.peekT = this.time.delayedCall(PEEK_MS, () => { this.peekT = null; if (!this.gearPinned && !this.hoverPow && !this.hoverPop) this.closeGear(); });
-      }
-    } });
+      const cp = (this.barPos || {}).cursed || { x: W / 2, y: BAR_Y };
+      ev.purified.forEach((p, k) => this.time.delayedCall((ev.gem ? 760 : 380) + k * 500, () => { purifyFx(this, p, Phaser.Math.Clamp(cp.x, 80, W - 80), cp.y - 70, 60); after(); bumpBar(this, 'cursed'); }));
+    });
   }
   next(fromTimer) {
     if (this.done) return;
-    if (fromTimer && this.tip && this.tip.visible) { this.autoNext = this.time.delayedCall(600, () => this.next(true)); return; } // let players read
+    if (fromTimer && ((this.tip && this.tip.visible) || this.gearOpen)) { this.autoNext = this.time.delayedCall(600, () => this.next(true)); return; } // let players read
     this.done = true; if (this.tip) this.tip.hide(true);
     this.tweens.timeScale = 1; this.time.timeScale = 1; this.tweens.resumeAll(); this.anims.resumeAll();
     if (this.autoNext) this.autoNext.remove();
@@ -1464,37 +1462,36 @@ class Intro extends Phaser.Scene {
     window.DC.phase = 'intro'; window.DC.stage = s + 1;
     this.tweens.timeScale = 1; this.time.timeScale = 1;
     fadeInMain(this);
-    backdrop(this, 'bg_lava', 0.55);
+    backdrop(this, 'bg_lava', 0.55, 730);
     this.add.image(W / 2, H / 2, 'vig').setDisplaySize(W + 40, H + 40).setAlpha(0.9);
-    const sc = Math.min(c.scale, 300 / c.fh, 520 / c.fw), bx = Math.min(PLAY_R - c.fw * sc / 2, 820);
-    shadow(this, bx + (c.body[0] - c.fw / 2) * sc, LAVA_GROUND, c.body[1] * sc * 1.05);
-    const boss = this.add.sprite(bx + 260, LAVA_GROUND, c.tex).setScale(sc).setOrigin(0.5, 1).play(c.anim).setAlpha(0);
+    const sc = Math.min(c.scale, 250 / c.fh, 360 / c.fw), bx = W / 2 + 40;
+    shadow(this, bx + (c.body[0] - c.fw / 2) * sc, 730, c.body[1] * sc * 1.05);
+    const boss = this.add.sprite(bx + 200, 730, c.tex).setScale(sc).setOrigin(0.5, 1).play(c.anim).setAlpha(0);
     if (c.tint) boss.setTint(c.tint);
     this.tweens.add({ targets: boss, x: bx, alpha: 1, duration: 480, ease: 'Back.out' });
     try { if (boss.preFX) boss.preFX.addGlow(Phaser.Display.Color.HexStringToColor(c.col).color, 2, 0, false, 0.1, 8); } catch (e) {}
     if (big) {
-      const bb = txt(this, 330, 66, t('bigBoss'), 40, '#ff5a4a', { strokeThickness: 10, stroke: '#2a0404', maxW: 600 });
+      const bb = txt(this, W / 2, 176, t('bigBoss'), 32, '#ff5a4a', { strokeThickness: 8, stroke: '#2a0404', maxW: W - 40 });
       popText(this, bb, 1); this.tweens.add({ targets: bb, scale: 1.1, yoyo: true, repeat: -1, duration: 380, delay: 400 });
     }
-    const t1 = txt(this, 330, 150, t('stageN', s + 1), 72, '#ffd36a', { strokeThickness: 10, maxW: 600 });
+    const t1 = txt(this, W / 2, 232, t('stageN', s + 1), 56, '#ffd36a', { strokeThickness: 10, maxW: W - 40 });
     popText(this, t1, 1);
     try { if (t1.preFX) t1.preFX.addShine(0.8, 0.3, 4); } catch (e) {}
-    const t2 = txt(this, 330, 236, bossName(s), 46, c.col, { strokeThickness: 8, maxW: 600 }); t2.setAlpha(0);
-    this.tweens.add({ targets: t2, alpha: 1, x: { from: 250, to: 330 }, duration: 380, delay: 200, ease: 'Quad.out' });
-    const t3 = txt(this, 330, 296, `HP ${fmt(stageHp(s, G))}`, 40, '#ff5a4a'); t3.setAlpha(0);
+    const t2 = txt(this, W / 2, 294, bossName(s), 32, c.col, { strokeThickness: 7, maxW: W - 30 }); t2.setAlpha(0);
+    this.tweens.add({ targets: t2, alpha: 1, x: { from: W / 2 - 60, to: W / 2 }, duration: 380, delay: 200, ease: 'Quad.out' });
+    const t3 = txt(this, W / 2, 342, `HP ${fmt(stageHp(s, G))}`, 32, '#ff5a4a', { maxW: W - 40 }); t3.setAlpha(0);
     this.tweens.add({ targets: t3, alpha: 1, duration: 300, delay: 420 });
-    txt(this, 330, 368, t('introLine'), 26, '#ffffff', { maxW: 600 });
-    // same fixed HUD as every other screen: POWER top-left, HERO STATS on the right (tap = full GEAR list)
-    this.G = G; this.tip = new Tooltip(this, () => gearList(G)); this.inv = []; this.gearOpen = false; this.statObjs = []; this.seenN = G.seenN = G.items.length;
-    this.statX = STAT_X; this.gx0 = GEAR_X; this.setupGearInput(); this.drawStats();
-    this.powN = powerHud(this, this.pw());
+    const il = txtW(this, W / 2, 374, t('introLine'), 20, '#ffffff', W - 50);
+    // same HUD as every other screen: hero + POWER + element chips on top (tap = STATS + GEAR page), gear counts at the bottom
+    this.G = G; this.tip = new Tooltip(this, () => gearList(G)); this.seenN = G.seenN = G.items.length;
+    this.drawPower();
     const n = gearList(G).length;
-    txt(this, 330, 404, n ? t('gearLine', n) : t('gear0'), 22, '#b8f0a0', { strokeThickness: 4, maxW: 600 });
-    const tap = txt(this, 330, 520, t('tapCont'), 30, '#fff2c0', { maxW: 600 });
+    txtW(this, W / 2, il.y + il.height + 10, n ? t('gearLine', n) : t('gear0'), 18, '#b8f0a0', W - 50);
+    const tap = txt(this, W / 2, 762, t('tapCont'), 28, '#fff2c0', { maxW: W - 40 });
     this.tweens.add({ targets: tap, alpha: 0.35, yoyo: true, repeat: -1, duration: 600 });
     sfx(this, 'stage', 0.7); if (big) sfx(this, 'charge', 0.5);
     this.cameras.main.fadeIn(250, 0, 0, 0);
-    this.time.delayedCall(400, () => this.input.on('pointerdown', (p, over) => { if (!this.gearOpen && !over.some((o) => o.getData && o.getData('item'))) this.go(); }));
+    this.time.delayedCall(400, () => this.input.on('pointerdown', (p, over) => { if (!this.gearOpen && this.time.now - (this.pageClosedAt || -1e9) > 350 && !over.some((o) => o.getData && o.getData('item') || o.__hud)) this.go(); }));
     this.time.delayedCall(s ? 2600 : 3600, () => this.go(true));
   }
   pw() { return expStrike(this.G, bossEl(this.s), this.s); }
@@ -1532,31 +1529,21 @@ class Strike extends Phaser.Scene {
     this.tip = new Tooltip(this, () => this.items);
     const c = this.cfg;
     this.bShadow = shadow(this, c.x, LAVA_GROUND, c.body[1] * c.scale * 1.05);
-    this.hShadow = shadow(this, 270, LAVA_GROUND, 90);
+    this.hShadow = shadow(this, HERO_X, LAVA_GROUND, 90);
     this.boss = this.add.sprite(c.x, LAVA_GROUND, c.tex).setScale(c.scale).setOrigin(0.5, 1).play(c.anim);
     this.untint();
-    this.hero = this.add.sprite(270, LAVA_GROUND, 'hero_idle').setScale(3).setOrigin(0.5, 1).play('hero-idle');
+    this.hero = this.add.sprite(HERO_X, LAVA_GROUND, 'hero_idle').setScale(3).setOrigin(0.5, 1).play('hero-idle');
     heroGlow(this.hero);
-    if (!this.uiCam || !this.cameras.cameras.includes(this.uiCam)) hudCamera(this);
-    const hud0 = this.children.list.length;   // boss info box: drawn by the UI camera -> same spot while the main camera zooms/shakes
-    panel(this, W / 2 - 300, 8, 600, 112, { border: c.big ? 0xff5a4a : undefined });
-    nextBossLine(this, W / 2 + 135, 94, s, 14);
-    // execute line marker on the HP bar
-    const st = txt(this, W / 2 - 165, c.big ? 42 : 58, t('stageN', s + 1), 44, '#ffd36a', { strokeThickness: 10, stroke: '#1a0a04', maxW: 250 });
-    if (c.big) txt(this, W / 2 - 165, 88, t('bigBoss'), 22, '#ff6a5a', { strokeThickness: 6, stroke: '#2a0404', maxW: 250 });
-    txt(this, W / 2 + 135, 30, bossName(s), 22, c.col, { strokeThickness: 5, maxW: 300 });
-    this.add.rectangle(W / 2 + 135, 60, 280, 24, 0x220000).setStrokeStyle(3, 0xffd36a);
-    this.hpGhost = this.add.rectangle(HPX, 60, HPW, 18, 0xffd8a0).setOrigin(0, 0.5); this.ghostHold = 0;   // trailing ghost of the HP bar
-    this.hp = this.add.rectangle(HPX, 60, HPW, 18, 0xd22a2a).setOrigin(0, 0.5);
-    this.hpText = txt(this, W / 2 + 135, 60, `${fmt(this.hpMax)} / ${fmt(this.hpMax)}`, 16, '#ffffff', { strokeThickness: 4, maxW: 270 });
-    if (this.execL0 = executeLine(this.G)) { const ex = HPX + HPW * this.execL0; this.add.rectangle(ex, 60, 3, 30, 0xff4a8a).setDepth(5); }   // EXECUTE line marker (the % is in HERO STATS)
-    toHud(this, this.bossHud = this.children.list.slice(hud0));
+    // boss info box (UI camera: same spot while the main camera zooms / shakes)
+    const bx = bossBox(this, s, this.hpMax, { text: `${fmt(this.hpMax)} / ${fmt(this.hpMax)}` });
+    this.hp = bx.bar; this.hpGhost = bx.ghost; this.ghostHold = 0; this.hpText = bx.ht; this.bossHud = bx.objs;
+    if (this.execL0 = executeLine(this.G)) { const ex = HPX + HPW * this.execL0; this.bossHud.push(hudAdd(this, this.add.rectangle(ex, BOSS_Y + 44, 3, 30, 0xff4a8a).setDepth(61))); }   // EXECUTE line marker
     this.dbObjs = [];
-    // the compact stats panel (left) stays usable until STRIKE is pressed; tap / hover opens the full GEAR list beside it
-    this.statX = STAT_X; this.gx0 = GEAR_X; this.inv = []; this.gearOpen = false; this.seenN = this.G.seenN = this.G.items.length; this.statObjs = [];
-    this.powV = this.pw(); this.setupGearInput(); this.drawStats(); this.powN = powerHud(this, this.powV); this.setPower(this.powV, false);
-    this.ready = txt(this, 430, 200, t('ready', this.items.length), 28, '#ffffff', { maxW: 400 });
-    this.btn = button(this, 430, 272, t('strike'), () => this.strike(), 240);
+    // the HUD + bottom gear bar stay usable until STRIKE is pressed (tap = STATS + GEAR page)
+    this.seenN = this.G.seenN = this.G.items.length;
+    this.drawPower();
+    this.ready = txtW(this, W / 2, 252, t('ready', this.items.length), 22, '#ffffff', W - 60);
+    this.btn = button(this, W / 2, 752, t('strike'), () => this.strike(), 240);
     window.DC.phase = 'strike-ready';
   }
   // camera shake budget: crits share one rate limit (~1 per 400ms); punch() = the big finishing shake (never stacks closer than 400ms either)
@@ -1581,8 +1568,7 @@ class Strike extends Phaser.Scene {
     this.btn.destroy(); this.ready.destroy();
     this.tip.hide(true);
     // lock + hide the stats panel / GEAR list for the swing itself
-    if (this.gearOpen) this.closeGear(); this.statsLocked = true; this.statsHidden = true;
-    this.statObjs.forEach((o) => this.tweens.add({ targets: o, alpha: 0, duration: 180, onComplete: () => o.destroy() })); this.statObjs = [];
+    if (this.gearOpen) this.closeGear(); this.statsLocked = true;
     this.charge();
   }
   charge() {
@@ -1598,7 +1584,7 @@ class Strike extends Phaser.Scene {
     const r = this.res, hd = this.head();
     this.hero.play('hero-run');
     this.cameras.main.zoomTo(1.06, 500, 'Sine.easeInOut');
-    this.cameras.main.pan(W / 2 + 40, 330, 500, 'Sine.easeInOut');
+    this.cameras.main.pan(W / 2 + 20, LAVA_GROUND - 200, 500, 'Sine.easeInOut');
     this.tweens.add({
       targets: this.hero, x: hd.x - 130, duration: 470, ease: 'Quad.in', onComplete: () => {
         sfx(this, 'swing');
@@ -1630,13 +1616,14 @@ class Strike extends Phaser.Scene {
     burst(this, hd.x, hd.y, 0xff5a2a, N(20), 280, 'px').setDepth(41);
     this.hitStop(Phaser.Math.Clamp(60 + 8 * r.L + (r.crits ? 12 : 0), 60, 100)); synth(this, r.crits ? 'crit' : 'hit', 0);   // HITSTOP scales with the blow
     // live damage counter (nothing is revealed before the blade lands)
-    const TX = this.TX = 430, TY = this.TY = 290;
-    this.rays = this.add.image(TX, TY, 'rays').setTint(0xffd36a).setBlendMode(Phaser.BlendModes.ADD).setDepth(43).setScale(0).setAlpha(0);
+    // the counter is drawn by the UI camera (never zoomed / shaken off screen); it sits between the boss box and the boss
+    const TX = this.TX = W / 2, TY = this.TY = 322;
+    this.rays = hudAdd(this, this.add.image(TX, TY, 'rays').setTint(0xffd36a).setBlendMode(Phaser.BlendModes.ADD).setDepth(43).setScale(0).setAlpha(0));
     this.tweens.add({ targets: this.rays, angle: 360, duration: 6000, repeat: -1 });
-    this.dmgLabel = txt(this, TX, TY - 66, t('damage'), 22, '#ffe8b0', { strokeThickness: 5 }).setDepth(46);
-    this.dmg = txt(this, TX, TY, '0', 84, '#ffffff', { strokeThickness: 12 }).setDepth(46);
+    this.dmgLabel = hudAdd(this, txt(this, TX, TY - 60, t('damage'), 18, '#ffe8b0', { strokeThickness: 5, maxW: W - 40 }).setDepth(46));
+    this.dmg = hudAdd(this, txt(this, TX, TY, '0', 72, '#ffffff', { strokeThickness: 12 }).setDepth(46));
     popText(this, this.dmg, 1);
-    this.br = txt(this, TX, TY + 88, '', 20, '#ffffff', { strokeThickness: 4, maxW: 560 }).setDepth(45);
+    this.br = hudAdd(this, txt(this, TX, TY + 50, '', 16, '#ffffff', { strokeThickness: 4, maxW: W - 20 }).setDepth(45));
     this.dmgScale = 1; this.shown = 0;
     // the strike plays as a volley: curse / frostbite notes first, then EVERY hit on its own (the hero, then each weapon with
     // its own roll and its own crit), THUNDER chains on the hits that fork, and FIRE burn ticks last. The whole volley is
@@ -1660,14 +1647,14 @@ class Strike extends Phaser.Scene {
     let sum = 0, burn = 0, next = 1, hitsDone = 0;
     const show = (v) => {
       this.dmg.setText(fmt(v));
-      const lim = Math.min(1.9, 440 / Math.max(1, this.dmg.width)); if (this.dmg.scaleX > lim) { this.dmg.setScale(lim); this.dmgScale = Math.min(this.dmgScale, lim); }
+      const lim = Math.min(1.9, (W - 30) / Math.max(1, this.dmg.width)); if (this.dmg.scaleX > lim) { this.dmg.setScale(lim); this.dmgScale = Math.min(this.dmgScale, lim); }
       const left = this.execd ? 0 : Math.max(0, this.hpMax - v);
       const nw = HPW * left / this.hpMax; if (nw < this.hp.width - 0.5) this.ghostHold = this.time.now + 260;
       this.hp.width = nw; this.hpText.setText(`${fmt(left)} / ${fmt(this.hpMax)}`);
       while (next <= L && v >= OK_TIERS[next].at * this.hpMax) { this.pulse(next, v); next++; }
     };
     // hit counter: "x37 HITS"
-    this.hitsT = txt(this, TX, TY - 108, ' ', 28, '#ffe066', { strokeThickness: 6, stroke: '#2a1404', maxW: 320 }).setDepth(46);
+    this.hitsT = hudAdd(this, txt(this, TX, TY - 86, ' ', 22, '#ffe066', { strokeThickness: 6, stroke: '#2a1404', maxW: W - 40 }).setDepth(46));
     window.DC.popped = 0; this.burnI = 0; this.lastTick = 0;
     let shown = 0;
     const runStep = (k) => {
@@ -1689,14 +1676,15 @@ class Strike extends Phaser.Scene {
       this.time.delayedCall(gap, () => runStep(k + 1));
     };
     this.time.delayedCall(260, () => runStep(0));
-    this.tweens.add({ targets: this.hero, x: hd.x - 300, duration: 500, delay: 300, ease: 'Quad.out' });
+    this.tweens.add({ targets: this.hero, x: HERO_X, duration: 500, delay: 300, ease: 'Quad.out' });
   }
   // one floating number bursting out of the boss (a hit, a batch of hits, a burn tick or a curse / frostbite note)
   popNumber(s, k) {
     const hd = this.head(), K = s.kind, fast = K === 'hit' || K === 'batch';
     let x = hd.x + Phaser.Math.Between(-110, 110), y = hd.y - 20 + Phaser.Math.Between(-70, 50);
-    if (K === 'burn') { const bi = this.burnI = (this.burnI || 0) + 1; x = Math.max(800, hd.x + 30); y = hd.y + 30 - (bi - 1) * 46; }
+    if (K === 'burn') { const bi = this.burnI = (this.burnI || 0) + 1; x = hd.x + 30; y = hd.y + 30 - (bi - 1) * 46; }
     if (!fast) { x = hd.x + ((k % 3) - 1) * 70; y = hd.y - 40 - (k % 2) * 50; }
+    x = Phaser.Math.Clamp(x, 70, W - 70); y = Math.max(TOPY_POP, y);
     let label, col, size, neg = false, crit = false, chain = 0, cv = 0;
     if (K === 'hit') {
       const h = s.h; neg = h.v < 0; crit = h.crit; chain = h.chain; cv = h.cv;
@@ -1717,15 +1705,16 @@ class Strike extends Phaser.Scene {
     this.elemFx(s, crit, chain);
     if (neg) window.DC.drainPopped = (window.DC.drainPopped || 0) + 1;
     const critNum = crit && (K === 'hit' || K === 'batch');
-    const fl = txt(this, x, y, label, size, col, { strokeThickness: Math.max(5, size / 6) + (critNum ? 3 : 0), stroke: critNum ? '#c8102a' : '#140812' }).setDepth(critNum ? 45 : 44);
+    const fl = txt(this, x, y, label, size, col, { strokeThickness: Math.max(5, size / 6) + (critNum ? 3 : 0), stroke: critNum ? '#c8102a' : '#140812', maxW: W - 20 }).setDepth(critNum ? 45 : 44);
+    fl.x = Phaser.Math.Clamp(fl.x, Math.min(W / 2, fl.width / 2 + 6), Math.max(W / 2, W - 6 - fl.width / 2));
     // POP: scale up past full size, then settle (crits overshoot more)
     fl.setScale(0.25);
     this.tweens.add({ targets: fl, scale: critNum ? 1.6 : 1.3, duration: fast ? 70 : 100, ease: 'Quad.out', onComplete: () => { if (fl.active) this.tweens.add({ targets: fl, scale: 1, duration: 140, ease: 'Back.out' }); } });
     if (critNum) { fl.setAngle(Phaser.Math.Between(-8, 8)); window.DC.critPopped = (window.DC.critPopped || 0) + 1; }
     const life = fast ? Math.max(380, Math.min(700, 2600 / Math.max(1, this.res.hits.length) * 4)) : 700;
     this.tweens.add({ targets: fl, y: y - (K === 'burn' ? 40 : 70), alpha: { from: 1, to: 0 }, delay: fast ? 200 : 260, duration: life, ease: 'Quad.in', onComplete: () => fl.destroy() });
-    if (crit && K === 'hit') { const ct = txt(this, x, y - size * 0.75, t('critHit'), 18, '#fff2a0', { strokeThickness: 4 }).setDepth(44); this.tweens.add({ targets: ct, alpha: 0, y: ct.y - 50, delay: 260, duration: life, onComplete: () => ct.destroy() }); }
-    if (chain && K === 'hit' && cv) { const cl = txt(this, x + 60, y + 30, `${t('chainHit', chain)} +${fmt(cv)}`, 20, '#ffe866', { strokeThickness: 5 }).setDepth(44); this.tweens.add({ targets: cl, alpha: 0, y: cl.y - 40, delay: 300, duration: life, onComplete: () => cl.destroy() }); }
+    if (crit && K === 'hit') { const ct = txt(this, Phaser.Math.Clamp(x, 60, W - 60), y - size * 0.75, t('critHit'), 18, '#fff2a0', { strokeThickness: 4 }).setDepth(44); this.tweens.add({ targets: ct, alpha: 0, y: ct.y - 50, delay: 260, duration: life, onComplete: () => ct.destroy() }); }
+    if (chain && K === 'hit' && cv) { const cl = txt(this, 0, y + 30, `${t('chainHit', chain)} +${fmt(cv)}`, 18, '#ffe866', { strokeThickness: 5, maxW: W - 20 }); cl.x = Phaser.Math.Clamp(x + 60, cl.width / 2 + 6, W - 6 - cl.width / 2); (cl).setDepth(44); this.tweens.add({ targets: cl, alpha: 0, y: cl.y - 40, delay: 300, duration: life, onComplete: () => cl.destroy() }); }
     // the boss flinches with every number (light on fast volleys)
     if (neg) this.boss.setTint(0xc090ff); else this.boss.setTintFill(0xffffff);   // white hit flash on the boss
     this.time.delayedCall(neg ? 60 : crit ? 70 : 45, () => this.untint());
@@ -1742,8 +1731,8 @@ class Strike extends Phaser.Scene {
   }
   // dual-element combo callout (MELT / SUPERCONDUCT / OVERLOAD): a banner under the hit counter
   comboPop(label, css, col) {
-    const hd = this.head(), y = 236 + (this.comboN || 0) * 44; this.comboN = (this.comboN || 0) + 1;
-    const c = txt(this, Phaser.Math.Clamp(hd.x, 640, 880), y + 20, label, 34, css, { strokeThickness: 8, stroke: '#1a0804', maxW: 420 }).setDepth(48);
+    const y = 404 + (this.comboN || 0) * 40; this.comboN = (this.comboN || 0) + 1;
+    const c = hudAdd(this, txt(this, W / 2, y + 20, label, 30, css, { strokeThickness: 8, stroke: '#1a0804', maxW: W - 20 }).setDepth(48));
     try { if (c.preFX) c.preFX.addGlow(col, 3, 0, false, 0.1, 8); } catch (e) {}
     popText(this, c, 1); sfx(this, 'banner', 0.5);
     this.tweens.add({ targets: c, alpha: 0, y: y - 20, delay: 1300, duration: 400, onComplete: () => c.destroy() });
@@ -1760,7 +1749,7 @@ class Strike extends Phaser.Scene {
       this.tweens.add({ targets: line, alpha: 0, duration: 500, onComplete: () => line.destroy() });
       this.hp.width = 0; this.hpText.setText(`0 / ${fmt(this.hpMax)}`);
     } });
-    const ex = txt(this, Phaser.Math.Clamp(hd.x, 640, 860), Math.max(250, hd.y - 110), t('execPop'), 64, '#ff4a7a', { strokeThickness: 12, stroke: '#2a0410', maxW: 520 }).setDepth(49);
+    const ex = hudAdd(this, txt(this, W / 2, 470, t('execPop'), 48, '#ff4a7a', { strokeThickness: 10, stroke: '#2a0410', maxW: W - 20 }).setDepth(49));
     try { if (ex.preFX) ex.preFX.addGlow(0xff3a6a, 4, 0, false, 0.1, 10); } catch (e) {}
     popText(this, ex, 1); window.DC.executePopped = true;
     this.tweens.add({ targets: ex, alpha: 0, delay: 1500, duration: 400, onComplete: () => ex.destroy() });
@@ -1814,7 +1803,7 @@ class Strike extends Phaser.Scene {
   pulse(L, v) {
     const T = OK_TIERS[L], cam = this.cameras.main, hd = this.head(), N = (n) => Math.max(4, Math.round(n * this.lite()));
     this.shown = L; window.DC.overkill = L;
-    this.dmgScale = Math.min(T.font / 84, 1.9, 440 / Math.max(1, this.dmg.width));
+    this.dmgScale = Math.min(T.font / 84, 1.9, (W - 30) / Math.max(1, this.dmg.width));
     this.dmg.setColor(T.css);
     this.tweens.killTweensOf(this.dmg); this.dmgPulse = true; this.time.delayedCall(260, () => { this.dmgPulse = false; });
     this.dmg.setScale(this.dmgScale * 1.25);
@@ -1843,7 +1832,7 @@ class Strike extends Phaser.Scene {
     // overkill label for this tier
     if (this.okT) this.okT.destroy();
     const ratio = Math.max(OK_TIERS[L].at, v / this.hpMax);
-    this.okT = txt(this, this.TX, this.TY + 130, okLabel(L, ratio), 30 + 8 * L, T.css, { strokeThickness: 8, stroke: '#1a0410', maxW: 600 }).setDepth(47);
+    this.okT = hudAdd(this, txt(this, this.TX, this.TY + 88, okLabel(L, ratio), 24 + 5 * L, T.css, { strokeThickness: 8, stroke: '#1a0410', maxW: W - 20 }).setDepth(47));
     try { if (this.okT.preFX) { this.okT.preFX.addGlow(T.col, 3, 0, false, 0.1, 10); if (L >= 3) this.okT.preFX.addShine(0.9, 0.35, 4); } } catch (e) {}
     popText(this, this.okT, 1);
     this.tweens.add({ targets: this.okT, angle: { from: -3, to: 3 }, yoyo: true, repeat: -1, duration: 300 });
@@ -1859,7 +1848,7 @@ class Strike extends Phaser.Scene {
     const L = r.L;
     if (L >= 2) { if (this.okT) setFit(this.okT, okLabel(L, r.ratio)); }
     else {
-      const lbl = txt(this, this.TX, this.TY + 130, r.executed ? t('execPop') : L === 1 ? t('kill') : t('notEnough', fmt(r.total), fmt(this.hpMax)), L === 1 ? 46 : 30, OK_TIERS[L].css, { strokeThickness: 8, maxW: 600 }).setDepth(47);
+      const lbl = hudAdd(this, txt(this, this.TX, this.TY + 88, r.executed ? t('execPop') : L === 1 ? t('kill') : t('notEnough', fmt(r.total), fmt(this.hpMax)), L === 1 ? 40 : 24, OK_TIERS[L].css, { strokeThickness: 8, maxW: W - 20 }).setDepth(47));
       popText(this, lbl, 1); this.okT = lbl;
     }
     if (L >= 1) {
@@ -1923,22 +1912,22 @@ class Strike extends Phaser.Scene {
     this.tweens.add({ targets: [this.dmg, this.br, this.okT, this.rays, this.dmgLabel, this.hitsT].filter(Boolean), alpha: 0, duration: 250 });
     const N = (n) => Math.max(4, Math.round(n * this.lite()));
     sfx(this, 'banner', 0.8); sfx(this, 'rare', 0.5);
-    this.tweens.add({ targets: this.hero, x: 520, duration: 400 });
+    this.tweens.add({ targets: this.hero, x: W / 2 - 40, duration: 400 });
     const big = isBig(this.s);
-    const ban = txt(this, PLAY_R / 2 + 4, 220, big ? t('milestone', this.s + 1) : t('stageClear', this.s + 1), 76, '#ffd36a', { strokeThickness: 12, stroke: '#4a2400', maxW: 940 }).setDepth(60);
+    const ban = txt(this, W / 2, 300, big ? t('milestone', this.s + 1) : t('stageClear', this.s + 1), 44, '#ffd36a', { strokeThickness: 10, stroke: '#4a2400', maxW: W - 24 }).setDepth(60);
     this.statsHidden = false; this.statsLocked = false; this.drawStats();   // the swing is over: the panel is back in its spot
     if (big) milestoneJingle(this);
     try { if (ban.preFX) { ban.preFX.addShine(0.9, 0.35, 4); ban.preFX.addGlow(0xffcf40, 4, 0, false, 0.1, 10); } } catch (e) {}
     popText(this, ban, 1);
     const nxs = this.s + 1, nxb = isBig(nxs);
-    const sub = txt(this, PLAY_R / 2 + 4, 300, (nxb ? t('bigBoss') + '!  ' : '') + t('next', bossName(nxs), fmt(stageHp(nxs, this.G))), 30, nxb ? '#ff9a7a' : '#ffffff', { maxW: 940 }).setDepth(60); sub.setAlpha(0);
+    const sub = txtW(this, W / 2, 334, (nxb ? t('bigBoss') + '!  ' : '') + t('next', bossName(nxs), fmt(stageHp(nxs, this.G))), 20, nxb ? '#ff9a7a' : '#ffffff', W - 40).setDepth(60); sub.setAlpha(0);
     this.tweens.add({ targets: sub, alpha: 1, duration: 300, delay: 300 });
-    const coins = this.add.particles(0, -20, 'coin', { x: { min: 100, max: 1100 }, lifespan: 2000, speedY: { min: 120, max: 260 }, gravityY: 260, rotate: { min: 0, max: 360 }, scale: { min: 1.4, max: 2.2 }, frequency: 30 / this.lite() }).setDepth(59);
+    const coins = this.add.particles(0, -20, 'coin', { x: { min: 10, max: W - 10 }, lifespan: 2000, speedY: { min: 120, max: 260 }, gravityY: 260, rotate: { min: 0, max: 360 }, scale: { min: 1.4, max: 2.2 }, frequency: 30 / this.lite() }).setDepth(59);
     this.time.delayedCall(1200, () => coins.stop());
-    burst(this, W / 2, 220, 0xffcf40, N(60), 420).setDepth(61);
+    burst(this, W / 2, 300, 0xffcf40, N(60), 420).setDepth(61);
     const g = afterKill(this.G, this.res);   // OVERKILL CONVERSION -> permanent damage bonus
     if (g > 0) {
-      const pp = txt(this, W / 2, 352, t('permPop', pct(g)), 30, '#ffb0e0', { strokeThickness: 7, maxW: 600 }).setDepth(60);
+      const pp = txt(this, W / 2, 420, t('permPop', pct(g)), 24, '#ffb0e0', { strokeThickness: 7, maxW: W - 30 }).setDepth(60);
       popText(this, pp, 1); this.tweens.add({ targets: pp, alpha: 0, y: pp.y - 20, delay: 1200, duration: 400, onComplete: () => pp.destroy() });
       window.DC.perm = this.G.perm;
     }
@@ -1959,25 +1948,26 @@ class Strike extends Phaser.Scene {
     const dimR = this.add.rectangle(-100, -100, W + 200, H + 200, 0x05030a, 1).setOrigin(0).setDepth(60.5).setAlpha(0);
     this.tweens.add({ targets: dimR, alpha: 0.55, duration: 300 });
     // the (dead) boss's info box stays in its spot but dims under the modal reveal, so the reveal title reads clearly
-    (this.bossHud || []).forEach((o) => { if (o.active) this.tweens.add({ targets: o, alpha: o.alpha * 0.15, duration: 300 }); });
-    const title = txt(this, X, 62, t('bonusTitle'), 40, '#ffd36a', { strokeThickness: 8, stroke: '#4a2400', maxW: 560 }).setDepth(62);
+    (this.bossHud || []).forEach((o) => { if (o.active) this.tweens.add({ targets: o, alpha: 0, duration: 250 }); });
+    const title = txt(this, X, 250, t('bonusTitle'), 34, '#ffd36a', { strokeThickness: 8, stroke: '#4a2400', maxW: W - 24 }).setDepth(62);
+    window.DC.bonusTitleY = { title: 250 - 20, box: BOSS_Y + 76 };
     popText(this, title, 1); sfx(this, 'banner', 0.7);
-    const tier = txt(this, X, 100, t('bonusTier')[b.tier], 24, jack ? '#ffcf40' : b.tier === 'chest' ? '#d58cff' : '#e8dcff', { strokeThickness: 5, maxW: 560 }).setDepth(62);
+    const tier = txt(this, X, 286, t('bonusTier')[b.tier], 20, jack ? '#ffcf40' : b.tier === 'chest' ? '#d58cff' : '#e8dcff', { strokeThickness: 5, maxW: W - 30 }).setDepth(62);
     tier.setAlpha(0); this.tweens.add({ targets: tier, alpha: 1, duration: 200, delay: 150 });
     // OVERKILL -> RARITY: how much the overkill raised the drop's odds ("Overkill x12 -> Rare+ 64% (normally 20%)")
     if (b.q >= 1 && b.rare !== undefined) {
       const qs = b.q >= 100 ? fmt(b.q) : b.q >= 10 ? String(Math.round(b.q)) : b.q.toFixed(1).replace(/\.0$/, '');
-      const ol = txt(this, X, 130, t('okRare', qs, P100(b.rare), P100(b.base)), 19, '#9affd8', { strokeThickness: 5, stroke: '#04201a', maxW: 640 }).setDepth(62);
+      const ol = txtW(this, X, 302, t('okRare', qs, P100(b.rare), P100(b.base)), 16, '#9affd8', W - 30, { stroke: '#04201a' }).setDepth(62);
       ol.setAlpha(0); this.tweens.add({ targets: ol, alpha: 1, duration: 200, delay: 300 }); window.DC.okRareText = ol.text;
     }
-    const CX = X, IX = X, CY = 330; // chest mid-screen, the item rises above it
+    const CX = X, IX = X, CY = 524; // chest mid-screen, the item rises above it
     const ch = this.add.image(CX, -60, 'chest_' + it.element).setScale(2.6).setOrigin(0.5, 1).setDepth(62);
     if (jack) { const g = this.add.image(CX, CY - 40, 'glowdot').setTint(0xffcf40).setBlendMode(Phaser.BlendModes.ADD).setDepth(61).setScale(2.5).setAlpha(0.6); this.tweens.add({ targets: g, scale: 3.2, yoyo: true, repeat: 4, duration: 140 }); this.time.delayedCall(1400, () => g.destroy()); sfx(this, 'charge', 0.6); }
     this.tweens.add({ targets: ch, y: CY, duration: 380, ease: 'Bounce.out', onComplete: () => {
       sfx(this, 'open', 0.5);
       this.tweens.add({ targets: ch, angle: { from: -7, to: 7 }, yoyo: true, repeat: jack ? 4 : 2, duration: 55, onComplete: () => {
         ch.setAngle(0).setTexture('open_' + it.element);
-        const iy = 192;
+        const iy = 392;
         if (it.rarity !== 'COMMON') {
           const rays = this.add.image(IX, iy, 'rays').setTint(R.col).setBlendMode(Phaser.BlendModes.ADD).setDepth(62).setScale(0).setAlpha(0.7);
           this.tweens.add({ targets: rays, scale: leg ? 1.2 : 0.85, duration: 360, ease: 'Back.out' }); this.tweens.add({ targets: rays, angle: 360, duration: 6000, repeat: -1 });
@@ -1985,27 +1975,27 @@ class Strike extends Phaser.Scene {
         burst(this, CX, CY - 40, R.col, N(leg ? 80 : 40), leg ? 460 : 320).setDepth(63);
         this.ring(CX, CY - 40, R.col, leg ? 10 : 6, leg ? 8 : 4);
         if (leg) { softFlash(this, 0xffe6a0, 0.22, 260); sfx(this, 'legendary', 0.85); this.cameras.main.shake(400, 0.012);
-          const coins = this.add.particles(0, -20, 'coin', { x: { min: 100, max: 1100 }, lifespan: 1800, speedY: { min: 120, max: 240 }, gravityY: 260, rotate: { min: 0, max: 360 }, scale: { min: 1.4, max: 2.2 }, frequency: 30 / this.lite() }).setDepth(63);
+          const coins = this.add.particles(0, -20, 'coin', { x: { min: 10, max: W - 10 }, lifespan: 1800, speedY: { min: 120, max: 240 }, gravityY: 260, rotate: { min: 0, max: 360 }, scale: { min: 1.4, max: 2.2 }, frequency: 30 / this.lite() }).setDepth(63);
           this.time.delayedCall(900, () => coins.stop()); }
         else if (BIG_R[it.rarity]) { sfx(this, 'epic', 0.7); this.cameras.main.shake(250, 0.008); }
         else sfx(this, it.rarity === 'COMMON' ? 'open' : 'rare', 0.6);
         const icon = this.add.image(CX, CY - 40, 'icons', it.frame).setDepth(64).setScale(1);
         try { if (icon.preFX && it.rarity !== 'COMMON') icon.preFX.addGlow(R.col, 4, 0, false, 0.1, 10); } catch (e) {}
-        this.tweens.add({ targets: icon, x: IX, y: iy, scale: 3.4, duration: 420, ease: 'Back.out' });
+        this.tweens.add({ targets: icon, x: IX, y: iy, scale: 3, duration: 420, ease: 'Back.out' });
         // the item card: rarity, name, effect (+ the gear event below)
-        const cardBg = panel(this, X - 340, 352, 680, 172, { border: R.col, alpha: 0.95 }).setDepth(63).setAlpha(0);
-        const rt = txt(this, X, 378, t('rar')[it.rarity], 20, R.css, { strokeThickness: 5, maxW: 600 }).setDepth(64).setAlpha(0);
-        const nm = txt(this, X, 414, it.name, 30, it.cursed ? '#d9a6ff' : EL_CSS[it.element], { strokeThickness: 6, maxW: 640 }).setDepth(64).setAlpha(0);
+        const rt = txt(this, X, 560, t('rar')[it.rarity], 18, R.css, { strokeThickness: 5, maxW: W - 50 }).setDepth(64).setAlpha(0);
+        const nm = txt(this, X, 590, it.name, 24, it.cursed ? '#d9a6ff' : EL_CSS[it.element], { strokeThickness: 6, maxW: W - 50 }).setDepth(64).setAlpha(0);
         const pre = stats(this.G.items), ev = equip(this.G, it, this.s), ups = buildUps(pre, stats(this.G.items));
         this.time.delayedCall(650, () => this.setPower(this.pw()));
         if (ups.length) this.time.delayedCall(1300, () => buildBanner(this, ups));
-        const rl = txt(this, X, 456, ruleText(it), 28, ruleCol(it), { strokeThickness: 6, maxW: 640 }).setDepth(64).setAlpha(0);
+        const rl = txtW(this, X, 610, ruleText(it), 20, ruleCol(it), W - 50).setDepth(64).setAlpha(0);
+        const cb = rl.y + rl.height + 12, cardBg = panel(this, 12, 540, W - 24, cb - 540, { border: R.col, alpha: 0.95 }).setDepth(63).setAlpha(0);
         this.tweens.add({ targets: [cardBg, rt, nm, rl], alpha: 1, duration: 200, delay: 200 }); popText(this, nm, 1);
-        window.DC.bonusCard = { x: X, y: 438, name: it.name, rarity: it.rarity };
+        window.DC.bonusCard = { x: X, y: 590, name: it.name, rarity: it.rarity, bottom: cb };
         window.DC.event = { type: ev.type, n: ev.n, gem: ev.gem, purified: ev.purified.map((p) => p.curse) };
         // equip it: the event label pops above the item, the gear bar redraws
         this.time.delayedCall(600, () => {
-          const el = txt(this, X, 498, ev.gem ? `${evText(ev)}  ${t('evGem')}` : evText(ev), 22, ev.gem ? EV_CSS.gem : EV_CSS[ev.type], { strokeThickness: 6, maxW: 330 }).setDepth(65);
+          const el = txt(this, X, Math.min(BAR_Y - 22, cb + 26), ev.gem ? `${evText(ev)}  ${t('evGem')}` : evText(ev), 20, ev.gem ? EV_CSS.gem : EV_CSS[ev.type], { strokeThickness: 6, maxW: W - 30 }).setDepth(65);
           popText(this, el, 1); sfx(this, 'tick', 0.55);
           ev.purified.forEach((p, k) => this.time.delayedCall(250 + k * 450, () => { purifyFx(this, p, IX, iy, 66); }));
           window.DC.bonusShown = true;
@@ -2028,16 +2018,8 @@ class Strike extends Phaser.Scene {
     if (ic) this.tweens.add({ targets: ic, alpha: 0, duration: 120 });
     if (this.gearOpen) this.closeGear();
     this.seenN = this.G.seenN = this.G.items.length - 1;
-    this.time.delayedCall(160, () => {
-      this.gearOpen = true; this.renderGear(true); window.DC.gearPeek = true;
-      const tx = this.gx0 + 21, ty = 182 + this.rowH / 2;
-      const fly = this.add.image(from.x, from.y, 'icons', it.frame).setScale(3.2).setDepth(700);
-      const lab = txt(this, from.x, from.y - 56, t('bossDrop'), 24, '#ff9a8a', { strokeThickness: 6, stroke: '#2a0404', maxW: 300 }).setDepth(700);
-      popText(this, lab, 1);
-      this.tweens.add({ targets: fly, x: tx, y: ty, scale: 0.86, duration: 420, ease: 'Quad.in', onComplete: () => { fly.destroy(); burst(this, tx, ty, 0xff6a5a, 14, 160, 'px').setDepth(701); sfx(this, 'tick', 0.6); } });
-      this.tweens.add({ targets: lab, x: tx + 150, y: ty - 44, scale: 0.7, alpha: { from: 1, to: 0 }, delay: 300, duration: 700, onComplete: () => lab.destroy() });
-      window.DC.dropFiled = { name: it.name, rows: this.G.items.length };
-    });
+    const cam = this.cameras.main, sp = { x: (from.x - cam.worldView.x) * cam.zoom, y: (from.y - cam.worldView.y) * cam.zoom, s: 3 };
+    this.time.delayedCall(160, () => flyToBar(this, it, sp, t('bossDrop'), '#ff9a8a', () => { window.DC.gearPeek = true; window.DC.dropFiled = { name: it.name, rows: this.G.items.length, bar: barKey(it) }; }));
     this.time.delayedCall(1700, done);
   }
   toNextStage() {
@@ -2065,7 +2047,7 @@ class Strike extends Phaser.Scene {
           this.time.delayedCall(240, () => {
             sfx(this, 'lose'); sfx(this, 'hit', 0.6);
             cam.shake(420, 0.03);
-            const chomp = txt(this, Phaser.Math.Clamp(m.x, 160, W - 160), m.y - 90, t('chomp'), 64, '#ff5a4a', { strokeThickness: 10 }).setDepth(50);
+            const chomp = txt(this, Phaser.Math.Clamp(m.x, 130, W - 130), Math.max(300, m.y - 90), t('chomp'), 52, '#ff5a4a', { strokeThickness: 10, maxW: W - 20 }).setDepth(50);
             chomp.setAngle(-8); popText(this, chomp, 1);
             burst(this, m.x, m.y + 20, 0xff3030, 40, 300, 'px');
             window.DC.phase = 'chomp';
@@ -2084,37 +2066,44 @@ class Strike extends Phaser.Scene {
     saveBest(Math.max(prev.stage, reached), Math.max(prev.hit, R.maxHit));
     const best = loadBest();
     window.DC.summary = { reached, cleared: this.s, total: R.total, best: R.maxHit, record: rec, bestStage: best.stage, bestHit: best.hit };
-    this.add.rectangle(-100, -100, W + 200, H + 200, 0x000000, 0.68).setOrigin(0).setDepth(70);
-    const D = 71, g = panel(this, W / 2 - 390, 20, 780, 500, { border: rec ? 0xffcf40 : 0xd04a3a }); g.setDepth(D);
-    const tt = txt(this, W / 2, 72, t('ateBy', bossName(this.s)), 50, '#ff5a4a', { strokeThickness: 10, maxW: 740 }).setDepth(D);
-    popText(this, tt, 1);
-    const st = txt(this, W / 2, 148, t('reached', reached), 52, '#ffd36a', { strokeThickness: 10, stroke: '#2a1404', maxW: 740 }).setDepth(D);
+    // portrait result card; the HUD / gear bar (UI camera) are hidden so nothing draws over it
+    if (this.gearOpen) this.closeGear(); this.statsLocked = true; if (this.tip) this.tip.hide(true);
+    this.children.list.filter((o) => o.__hud && o !== (this.tip && this.tip.c)).forEach((o) => o.setVisible(false));
+    const cam = this.cameras.main; cam.setZoom(1); cam.centerOn(W / 2, H / 2);
+    this.add.rectangle(-100, -100, W + 200, H + 200, 0x000000, 0.72).setOrigin(0).setDepth(70);
+    const D = 71, X = W / 2, WW = W - 56, g = panel(this, 14, 40, W - 28, 790, { border: rec ? 0xffcf40 : 0xd04a3a }); g.setDepth(D);
+    let y = 66;
+    const tt = txtW(this, X, y, t('ateBy', bossName(this.s)), 30, '#ff5a4a', WW, { strokeThickness: 8 }).setDepth(D); y += tt.height + 36;
+    const st = txt(this, X, y, t('reached', reached), 44, '#ffd36a', { strokeThickness: 10, stroke: '#2a1404', maxW: WW }).setDepth(D); y += 48;
     try { if (st.preFX) st.preFX.addShine(0.8, 0.3, 4); } catch (e) {}
-    txt(this, W / 2, 210, t('maxHit', fmt(R.maxHit)), 32, '#ffffff', { strokeThickness: 6, maxW: 740 }).setDepth(D);
-    txt(this, W / 2, 250, t('totalDmg', fmt(R.total)), 24, '#ffd36a', { strokeThickness: 5, maxW: 740 }).setDepth(D);
+    txt(this, X, y, t('maxHit', fmt(R.maxHit)), 26, '#ffffff', { strokeThickness: 6, maxW: WW }).setDepth(D); y += 36;
+    txt(this, X, y, t('totalDmg', fmt(R.total)), 20, '#ffd36a', { strokeThickness: 5, maxW: WW }).setDepth(D); y += 30;
+    txt(this, X, y, t('bestRec', best.stage, fmt(best.hit)), 18, '#b8f0a0', { strokeThickness: 4, maxW: WW }).setDepth(D); y += 18;
+    const ll = txtW(this, X, y, t('loseLine'), 18, '#e8dcff', WW).setDepth(D); y += ll.height + 34;
     if (rec) {
-      const nr = txt(this, W / 2 + 270, 112, t('newRec'), 28, '#8aff7a', { strokeThickness: 7, maxW: 260 }).setDepth(D + 1).setAngle(8);
+      const nr = txt(this, W - 86, 50, t('newRec'), 22, '#8aff7a', { strokeThickness: 7, maxW: 150 }).setDepth(D + 1).setAngle(8);
       popText(this, nr, 1); this.tweens.add({ targets: nr, scale: 1.12, yoyo: true, repeat: -1, duration: 420 });
-      this.time.delayedCall(400, () => burst(this, W / 2 + 270, 112, 0x8aff7a, 40, 320).setDepth(D + 1));
+      this.time.delayedCall(400, () => burst(this, W - 86, 50, 0x8aff7a, 40, 320).setDepth(D + 1));
     }
-    txt(this, W / 2, 286, t('bestRec', best.stage, fmt(best.hit)), 20, '#b8f0a0', { strokeThickness: 4, maxW: 740 }).setDepth(D);
-    txt(this, W / 2, 318, t('loseLine'), 20, '#e8dcff', { strokeThickness: 4, maxW: 740 }).setDepth(D);
-    // final gear, newest first: up to two rows of 10 (+N more)
-    const list = [...this.items].reverse(), n = Math.min(20, list.length), sp = 62, more = list.length - n;
+    // final gear, newest first: up to five rows of 6 (+N more)
+    const list = [...this.items].reverse(), n = Math.min(30, list.length), sp = 60, more = list.length - n;
     list.slice(0, n).forEach((it, i) => {
-      const row = Math.floor(i / 10), inRow = Math.min(10, n - row * 10), x = W / 2 - (inRow - 1) * sp / 2 + (i % 10) * sp, y = 372 + row * 58;
-      this.add.rectangle(x, y, 52, 52, itemCol(it), it.cursed ? 0.55 : 0.3).setStrokeStyle(2, RARITY[it.rarity].col).setDepth(D);
-      const im = this.tip.attach(this.add.image(x, y, 'icons', it.frame).setScale(1.35).setDepth(D), it);
+      const row = Math.floor(i / 6), inRow = Math.min(6, n - row * 6), x = X - (inRow - 1) * sp / 2 + (i % 6) * sp, yy = y + row * 58;
+      this.add.rectangle(x, yy, 52, 52, itemCol(it), it.cursed ? 0.55 : 0.3).setStrokeStyle(2, RARITY[it.rarity].col).setDepth(D);
+      const im = this.tip.attach(this.add.image(x, yy, 'icons', it.frame).setScale(1.35).setDepth(D), it);
       if (it.cursed && it.kind === 'weapon') im.setTint(0xb070ff);
     });
-    if (more) txt(this, W / 2 + 5 * sp + 30, 372 + 58, '+' + more, 22, '#ffe8a0', { strokeThickness: 5 }).setDepth(D);
-    if (n) txt(this, W / 2, n > 10 ? 478 : 420, t('tapItem'), 16, '#bba8d0', { strokeThickness: 3, maxW: 740 }).setDepth(D);
-    button(this, W / 2, 560, t('playAgain'), () => { restoreMusic(this); this.scene.start('title'); }, 300).setDepth(D);
+    const rows = Math.ceil(n / 6); y += Math.max(0, rows - 1) * 58 + 40;
+    if (more) { txt(this, X, y, '+' + more, 20, '#ffe8a0', { strokeThickness: 5 }).setDepth(D); y += 26; }
+    if (n) txtW(this, X, y, t('tapItem'), 16, '#bba8d0', WW).setDepth(D);
+    window.DC.endLayout = { gridBottom: y };
+    button(this, X, 772, t('playAgain'), () => { restoreMusic(this); this.scene.start('title'); }, 300).setDepth(D);
   }
 }
 
 // the Strike scene's pre-swing moment reuses the pick screen's stats panel + GEAR list (one implementation)
-['drawStats', 'drawGems', 'setupGearInput', 'setPower', 'inPopup', 'openGear', 'maybeCloseGear', 'closeGear', 'renderGear', 'addInvRow', 'scrollTo', 'updateRowInput'].forEach((k) => { Strike.prototype[k] = Pick.prototype[k]; Intro.prototype[k] = Pick.prototype[k]; });
+Object.assign(Strike.prototype, UI); Object.assign(Intro.prototype, UI);
+Object.assign(Pick.prototype, Object.fromEntries(Object.entries(UI).filter(([k]) => k !== 'drawPower')));   // Pick adds its hero first, then UI.drawPower
 
 function startGame() {
   if (window.__dcStarted) return; window.__dcStarted = true;

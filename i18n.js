@@ -760,6 +760,28 @@ es: {
 /*</es>*/
 };
 for (const l of LANGS) Object.assign(I18N[l], I18N10[l]);
+// v8 (portrait UI): merged STATS + GEAR page
+const I18N11 = {
+/*<en>*/
+en: { elemT: 'ELEMENTS', comboT: 'COMBOS', allT: 'All', cursedT: 'Cursed', noneT: 'Nothing here yet', pageT: 'HERO · STATS & GEAR' },
+/*</en>*/
+/*<zh>*/
+zh: { elemT: '元素', comboT: '组合技', allT: '全部', cursedT: '诅咒', noneT: '还没有', pageT: '勇者 · 属性与装备' },
+/*</zh>*/
+/*<ja>*/
+ja: { elemT: '属性', comboT: 'コンボ', allT: 'すべて', cursedT: '呪い', noneT: 'まだありません', pageT: '勇者・ステータスと装備' },
+/*</ja>*/
+/*<ko>*/
+ko: { elemT: '원소', comboT: '콤보', allT: '전체', cursedT: '저주', noneT: '아직 없음', pageT: '용사 · 능력치와 장비' },
+/*</ko>*/
+/*<pt>*/
+pt: { elemT: 'ELEMENTOS', comboT: 'COMBOS', allT: 'Tudo', cursedT: 'Amaldiçoado', noneT: 'Nada aqui ainda', pageT: 'HERÓI · STATUS E EQUIPAMENTO' },
+/*</pt>*/
+/*<es>*/
+es: { elemT: 'ELEMENTOS', comboT: 'COMBOS', allT: 'Todo', cursedT: 'Maldito', noneT: 'Nada todavía', pageT: 'HÉROE · ESTADÍSTICAS Y EQUIPO' },
+/*</es>*/
+};
+for (const l of LANGS) Object.assign(I18N[l], I18N11[l]);
 const NOUN_KEYS = ['Sword', 'Dagger', 'Mace', 'Bow', 'Axe', 'Blade', 'Staff', 'Spear', 'Armor', 'Boots', 'Helm', 'Amulet', 'Ring', 'Pendant', 'Medal', 'Talisman', 'Relic', 'Idol', 'Grimoire', 'Shard'];
 const CJK_FONT = { zh: 'FusionZH', ja: 'FusionJA', ko: 'FusionKO' };
 function detectLang() {
