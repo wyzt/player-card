@@ -804,6 +804,86 @@ es: { coverPlay: 'Toca para jugar', coverSub: 'Elige 1 de 3 cofres · golpea al 
 /*</es>*/
 };
 for (const l of LANGS) Object.assign(I18N[l], I18N12[l]);
+// v8.1: tap / hover explanations for the HERO STATS rows (effects as coded in game.js logic)
+const I18N13 = {
+/*<en>*/
+en: { stTip: {
+  exec: (v) => `After all your hits, if the boss has ${v}% HP or less left, it is EXECUTED (dies instantly). Red mark on the HP bar. Max 20%.`,
+  echo: (v) => `Each non-cursed weapon has a ${v}% chance to strike a second time in the same swing. Max 60%.`,
+  greed: (v) => `When you open the chest you picked: ${v}% chance its item is 1 rarity higher (up to Mythic). Boss drops are not affected. Max 80%.`,
+  perm: (v, c) => `+${v}% to ALL damage, kept for the whole run. Every kill with overkill adds more: ${c}% × (overkill − 1), counted up to ×4 overkill.`,
+  curse: 'Cursed items hurt you: a curse can drain hits, seal an element, lower crits, weaken damage or raise boss HP. It stays until a purify gem removes your worst one.',
+  now: (v) => `Now: ${v}`, cap: (v) => `Now: ${v} (max)` } },
+/*</en>*/
+/*<zh>*/
+zh: { stTip: {
+  exec: (v) => `全部命中结束后，若 Boss 剩余生命不超过 ${v}%，直接斩杀（立即死亡）。血条上的红线就是斩杀线。上限 20%。`,
+  echo: (v) => `每把未被诅咒的武器有 ${v}% 概率在同一次出击中再命中一次。上限 60%。`,
+  greed: (v) => `打开你选的宝箱时，有 ${v}% 概率品质升一级（最高到神话）。Boss 掉落不受影响。上限 80%。`,
+  perm: (v, c) => `全部伤害 +${v}%，整局保留。每次溢出击杀还会再加：${c}% ×（溢出倍数 − 1），最多按 ×4 溢出计算。`,
+  curse: '诅咒装备会削弱你：吸走伤害、封印元素、降低暴击、削弱伤害或提高 Boss 生命。会一直留着，直到净化宝石移除最糟的那件。',
+  now: (v) => `当前：${v}`, cap: (v) => `当前：${v}（已达上限）` } },
+/*</zh>*/
+/*<ja>*/
+ja: { stTip: {
+  exec: (v) => `全ヒット後、ボスの残りHPが ${v}% 以下なら処刑（即死）。HPバーの赤線が処刑ライン。最大20%。`,
+  echo: (v) => `呪われていない各武器が ${v}% の確率で同じ攻撃中にもう1回ヒット。最大60%。`,
+  greed: (v) => `選んだ宝箱を開けた時、${v}% の確率でレア度が1段階アップ（最大ミシック）。ボスのドロップには無効。最大80%。`,
+  perm: (v, c) => `全ダメージ +${v}%、ラン中ずっと有効。オーバーキルで倒すたびに追加：${c}% ×（倍率 − 1）、最大 ×4 まで計算。`,
+  curse: '呪い装備は不利：ヒットを吸う、属性を封印、会心を下げる、ダメージ低下、ボスHP増加。浄化の宝石が最悪の1つを消すまで残る。',
+  now: (v) => `現在：${v}`, cap: (v) => `現在：${v}（上限）` } },
+/*</ja>*/
+/*<ko>*/
+ko: { stTip: {
+  exec: (v) => `모든 타격 후 보스 HP가 ${v}% 이하로 남으면 처형(즉사). HP 바의 빨간 선이 처형선. 최대 20%.`,
+  echo: (v) => `저주받지 않은 무기마다 ${v}% 확률로 같은 공격에서 한 번 더 타격. 최대 60%.`,
+  greed: (v) => `고른 상자를 열 때 ${v}% 확률로 등급 1단계 상승(최대 신화). 보스 드롭에는 적용 안 됨. 최대 80%.`,
+  perm: (v, c) => `모든 피해 +${v}%, 런 끝까지 유지. 초과 처치마다 추가: ${c}% × (초과 배수 − 1), 최대 ×4까지 계산.`,
+  curse: '저주 장비는 불리하다: 피해 흡수, 원소 봉인, 치명타 감소, 피해 약화, 보스 HP 증가. 정화 보석이 가장 나쁜 것을 없앨 때까지 남는다.',
+  now: (v) => `현재: ${v}`, cap: (v) => `현재: ${v} (최대)` } },
+/*</ko>*/
+/*<pt>*/
+pt: { stTip: {
+  exec: (v) => `Depois de todos os golpes, se o chefe ficar com ${v}% de HP ou menos, ele é EXECUTADO (morre na hora). Marca vermelha na barra de HP. Máx. 20%.`,
+  echo: (v) => `Cada arma não amaldiçoada tem ${v}% de chance de golpear de novo no mesmo ataque. Máx. 60%.`,
+  greed: (v) => `Ao abrir o baú escolhido: ${v}% de chance do item vir 1 raridade acima (até Mítico). Não vale para o botim do chefe. Máx. 80%.`,
+  perm: (v, c) => `+${v}% em TODO o dano, até o fim da partida. Cada abate com excesso soma mais: ${c}% × (excesso − 1), contado até ×4.`,
+  curse: 'Itens amaldiçoados atrapalham: drenam golpes, selam um elemento, reduzem críticos, enfraquecem o dano ou aumentam o HP do chefe. Ficam até uma gema remover o pior.',
+  now: (v) => `Agora: ${v}`, cap: (v) => `Agora: ${v} (máx.)` } },
+/*</pt>*/
+/*<es>*/
+es: { stTip: {
+  exec: (v) => `Tras todos los golpes, si al jefe le queda ${v}% de vida o menos, queda EJECUTADO (muere al instante). Marca roja en la barra de vida. Máx. 20%.`,
+  echo: (v) => `Cada arma no maldita tiene ${v}% de probabilidad de golpear otra vez en el mismo ataque. Máx. 60%.`,
+  greed: (v) => `Al abrir el cofre elegido: ${v}% de probabilidad de que el objeto salga 1 rareza más alta (hasta Mítico). No afecta al botín del jefe. Máx. 80%.`,
+  perm: (v, c) => `+${v}% a TODO el daño durante toda la partida. Cada muerte con exceso suma más: ${c}% × (exceso − 1), contando hasta ×4.`,
+  curse: 'Los objetos malditos te perjudican: absorben golpes, sellan un elemento, bajan críticos, debilitan el daño o suben la vida del jefe. Siguen hasta que una gema quite el peor.',
+  now: (v) => `Ahora: ${v}`, cap: (v) => `Ahora: ${v} (máx.)` } },
+/*</es>*/
+};
+for (const l of LANGS) Object.assign(I18N[l], I18N13[l]);
+// v8.1: how a strike works (title) + the strike's hit log
+const I18N14 = {
+/*<en>*/
+en: { sub3: 'Your hero strikes first, then EVERY weapon you own hits once on its own (own crit). More weapons = more hits.', logHero: 'Hero', logTotal: 'TOTAL', logBatch: (n) => `${n} weapons`, logCrit: 'CRIT' },
+/*</en>*/
+/*<zh>*/
+zh: { sub3: '勇者先出手，然后每把武器各砍一次（各自判定暴击）。武器越多，命中越多。', logHero: '勇者', logTotal: '合计', logBatch: (n) => `${n} 把武器`, logCrit: '暴击' },
+/*</zh>*/
+/*<ja>*/
+ja: { sub3: '勇者が先に攻撃し、持っている武器がそれぞれ1回ずつヒット（会心も個別）。武器が多いほどヒットが増える。', logHero: '勇者', logTotal: '合計', logBatch: (n) => `武器 ${n} 本`, logCrit: '会心' },
+/*</ja>*/
+/*<ko>*/
+ko: { sub3: '용사가 먼저 공격하고, 가진 무기가 각각 한 번씩 따로 타격(치명타도 각자). 무기가 많을수록 타격이 늘어난다.', logHero: '용사', logTotal: '합계', logBatch: (n) => `무기 ${n}개`, logCrit: '치명' },
+/*</ko>*/
+/*<pt>*/
+pt: { sub3: 'O herói ataca primeiro, depois CADA arma sua golpeia uma vez por conta própria (crítico próprio). Mais armas = mais golpes.', logHero: 'Herói', logTotal: 'TOTAL', logBatch: (n) => `${n} armas`, logCrit: 'CRÍT' },
+/*</pt>*/
+/*<es>*/
+es: { sub3: 'El héroe ataca primero y luego CADA arma tuya golpea una vez por su cuenta (crítico propio). Más armas = más golpes.', logHero: 'Héroe', logTotal: 'TOTAL', logBatch: (n) => `${n} armas`, logCrit: 'CRÍT' },
+/*</es>*/
+};
+for (const l of LANGS) Object.assign(I18N[l], I18N14[l]);
 const NOUN_KEYS = ['Sword', 'Dagger', 'Mace', 'Bow', 'Axe', 'Blade', 'Staff', 'Spear', 'Armor', 'Boots', 'Helm', 'Amulet', 'Ring', 'Pendant', 'Medal', 'Talisman', 'Relic', 'Idol', 'Grimoire', 'Shard'];
 const CJK_FONT = { zh: 'FusionZH', ja: 'FusionJA', ko: 'FusionKO' };
 function detectLang() {

@@ -404,7 +404,7 @@ let FONT = fontFor(LANG);
 const BOSS_Y = 138, BAR_Y = 798, HPX = 22, HPW = W - 44, PLAY_R = W;
 const LAVA_GROUND = 700;   // floor line on the strike / intro / title screens
 const PICK_GROUND = 790;   // hoard floor on the pick screen (hero + waiting boss stand on it)
-const HERO_X = 86, TOPY_POP = 250;
+const HERO_X = 86, TOPY_POP = 250, LOG_Y = 704, LOG_N = 5, LOG_RH = 23;
 const CHEST_X = [76, 216, 356], CHEST_BASE = 500, CHEST_SC = 4, CARD_Y = 668;
 window.DC = { phase: 'boot', round: 0 };
 // test hook: DC.jump(20) starts stage 21 with gear built by 20 stages of picks
@@ -526,6 +526,7 @@ class Tooltip {
     const w = W - 24; let lines;
     if (it.kind === 'gem') lines = [[t('gemT'), 26, '#e0b8ff'], [t('gemHeld', this.scene.G ? this.scene.G.gems : 0), 22, '#ffffff'], [t('gemDesc'), 18, '#d8ccff']];
     else if (it.kind === 'combo') lines = [[t('comboN')[it.combo], 26, it.on ? '#ffd84a' : '#a89ab8'], [t('comboD')[it.combo], 20, '#ffffff'], [it.on ? t('comboOn') : t('comboOff'), 17, it.on ? '#7aff8a' : '#c8b49a']];
+    else if (it.kind === 'stat') { const T2 = t('stTip'); lines = [[it.name, 24, it.css], [it.stat === 'curse' ? T2.curse : it.stat === 'perm' ? T2.perm(it.v, it.c) : T2[it.stat](it.v), 18, '#ffffff'], [it.atCap ? T2.cap(it.val) : T2.now(it.val), 20, '#ffd84a']]; }
     else if (it.kind === 'syn') { const [a, b] = synLines(it.element, items); lines = [[a, 22, EL_CSS[it.element]], [t('synDesc')[it.element], 18, '#ffffff'], [b, 24, '#ffd84a']]; }
     else {
       lines = [
@@ -914,6 +915,11 @@ function openStats(sc, filter = null, keepScroll = false) {
   sect(t('statsT'));
   // execute / echo / greed / permanent: only shown once non-zero (dim hint while all four are 0); curses + gems always
   const U = [['exec', t('stExec'), pct(Y.execute) + '%', '#ff8ab0', Y.execute], ['echo', t('stEcho'), pct(Y.echo) + '%', '#ffffff', Y.echo], ['greed', t('stGreed'), pct(Y.greed) + '%', '#ffd84a', Y.greed], ['perm', t('stPerm'), '+' + pct(G.perm) + '%', '#ffb0e0', G.perm]].filter((r) => r[4]);
+  // tap / hover a stat -> what it really does (numbers from the same stats() the strike uses)
+  const CAP = { exec: RULES.caps.execute, echo: RULES.caps.echo, greed: RULES.caps.greed }, RAW = { exec: Y.execute, echo: Y.echo, greed: Y.greed };
+  const tipFor = (key, label, val, col) => key === 'gems' ? { kind: 'gem', rarity: 'RARE', name: label }
+    : { kind: 'stat', stat: key, rarity: key === 'curse' ? 'CURSED' : 'RARE', element: 'Fire', name: label, css: col === '#8a7a8a' ? '#e8dcc8' : col, val,
+        v: key === 'perm' ? pct(G.perm) : key === 'curse' ? 0 : pct(RAW[key]), c: pct(Y.okConv || 0), atCap: CAP[key] !== undefined && RAW[key] >= CAP[key] - 1e-9 };
   const rows = U.concat([['curse', t('stCurses'), String(curses(G).length), curses(G).length ? '#ff6a9a' : '#8a7a8a'], ['gems', t('stGems'), String(G.gems), G.gems ? '#e0b8ff' : '#8a7a8a']]);
   if (!U.length) { const h = put(txtW(sc, W / 2, y, t('statHint'), 16, '#9a8a9a', W - 40)); y += h.height + 8; }
   window.DC.statRows = U.map((r) => r[0]);
@@ -921,6 +927,7 @@ function openStats(sc, filter = null, keepScroll = false) {
     const x = i % 2 ? W / 2 + 6 : 20, wd = W / 2 - 26;
     const lt = T(x, y + 13, label, 18, '#e8dcc8'), vt = T(x + wd, y + 13, val, 18, col, 1); fitText(lt, wd - vt.width - 8, 18);
     if (key === 'gems') put(sc.add.image(x + wd - vt.width - 14, y + 13, 'gem').setScale(1.5));
+    drag(sc.tip.attach(put(sc.add.rectangle(x + wd / 2, y + 13, wd + 8, 30, 0xffffff, 0.001).setData('row', true)), tipFor(key, label, val, col)));
     if (i % 2 || i === rows.length - 1) y += 32;
   });
   // GEAR: filter tabs + rows (newest first)
@@ -1064,8 +1071,10 @@ class Title extends Phaser.Scene {
     // title + the rules (wrapped, never shrunk below readable size)
     const t0 = txt(this, W / 2, 128, t('title'), 54, '#ffd36a', { strokeThickness: 10, maxW: W - 40 });
     const r1 = txtW(this, W / 2, 0, t('sub1'), 22, '#ffffff', W - 70), r2 = txtW(this, W / 2, 0, t('sub2'), 18, '#ff9a7a', W - 70);
-    r1.y = 172; r2.y = r1.y + r1.height + 8;
-    const bot = r2.y + r2.height + 16; const pg = panel(this, 16, 82, W - 32, bot - 82); pg.setDepth(-1); t0.setDepth(1); r1.setDepth(1); r2.setDepth(1);
+    const r3 = txtW(this, W / 2, 0, t('sub3'), 18, '#ffe27a', W - 70);   // how a strike works: hero first, then every weapon once
+    r1.y = 172; r3.y = r1.y + r1.height + 8; r2.y = r3.y + r3.height + 8;
+    const bot = r2.y + r2.height + 16; const pg = panel(this, 16, 82, W - 32, bot - 82); pg.setDepth(-1); [t0, r1, r2, r3].forEach((o) => o.setDepth(1));
+    window.DC.titleRules = r3.text;
     const best = loadBest();
     if (best.stage) txt(this, W / 2, bot + 26, t('titleBest', best.stage, fmt(best.hit)), 18, '#b8f0a0', { strokeThickness: 5, maxW: W - 30 });
     const tap = txt(this, W / 2, 770, t('tapStart'), 30, '#fff2c0', { maxW: W - 40 });
@@ -1627,6 +1636,7 @@ class Strike extends Phaser.Scene {
     popText(this, this.dmg, 1);
     this.br = hudAdd(this, txt(this, TX, TY + 50, '', 16, '#ffffff', { strokeThickness: 4, maxW: W - 20 }).setDepth(45));
     this.dmgScale = 1; this.shown = 0;
+    this.logInit();
     // the strike plays as a volley: curse / frostbite notes first, then EVERY hit on its own (the hero, then each weapon with
     // its own roll and its own crit), THUNDER chains on the hits that fork, and FIRE burn ticks last. The whole volley is
     // squeezed into ~3s: the cadence speeds up with more weapons and above 15 hits the pops are batched.
@@ -1653,6 +1663,7 @@ class Strike extends Phaser.Scene {
       const left = this.execd ? 0 : Math.max(0, this.hpMax - v);
       const nw = HPW * left / this.hpMax; if (nw < this.hp.width - 0.5) this.ghostHold = this.time.now + 260;
       this.hp.width = nw; this.hpText.setText(`${fmt(left)} / ${fmt(this.hpMax)}`);
+      if (this.logV) this.logV.setText(fmt(v));
       while (next <= L && v >= OK_TIERS[next].at * this.hpMax) { this.pulse(next, v); next++; }
     };
     // hit counter: "x37 HITS"
@@ -1704,6 +1715,7 @@ class Strike extends Phaser.Scene {
     else if (K === 'weak') { label = t('cur').weak(P100(1 - s.v)); col = '#ff7a9a'; size = 32; }
     else if (K === 'vuln') { label = t('vulnPop', fmtX(s.v)); col = '#9ae8ff'; size = 40; }
     else { label = t('burnPop', fmt(s.v)) + (s.n > 1 ? ` ×${s.n}` : ''); col = '#ff9a4a'; size = 34; }
+    this.logAdd(K, s, label, col, crit, chain, cv, neg);
     this.elemFx(s, crit, chain);
     if (neg) window.DC.drainPopped = (window.DC.drainPopped || 0) + 1;
     const critNum = crit && (K === 'hit' || K === 'batch');
@@ -1731,6 +1743,47 @@ class Strike extends Phaser.Scene {
     else if (neg || K === 'seal' || K === 'weak') sfx(this, 'curse', 0.35);
     else if (now - this.lastTick > 60) { if (K === 'vuln') sfx(this, 'banner', 0.45); else synth(this, 'hit', hi); this.lastTick = now; }
   }
+  // HIT LOG (bottom, over the hidden gear bar): one row per hit = icon + who + damage (+CRIT / ECHO / chain), the newest
+  // row slides in at the bottom and older rows scroll up, in step with the volley; the running total sits underneath
+  logInit() {
+    (this.barObjs || []).forEach((o) => o.setVisible(false));
+    const D = 55, y0 = LOG_Y, add = (o) => { this.logObjs.push(hudAdd(this, o).setDepth(D)); return o; };
+    this.logObjs = []; this.logRows = []; window.DC.hitLog = [];
+    add(panel(this, 6, y0, W - 12, H - 6 - y0, { alpha: 0.9 }));
+    const c = this.logC = add(this.add.container(0, 0));
+    const mg = this.make.graphics({ add: false }); mg.fillStyle(0xffffff).fillRect(8, y0 + 6, W - 16, LOG_N * LOG_RH); c.setMask(mg.createGeometryMask()); this.logMask = mg;
+    add(this.add.rectangle(W / 2, y0 + 10 + LOG_N * LOG_RH, W - 28, 2, 0xffcf40, 0.5));
+    add(txt(this, 20, H - 26, t('logTotal'), 18, '#ffe8a0', { strokeThickness: 4 }).setOrigin(0, 0.5));
+    this.logV = add(txt(this, W - 20, H - 26, '0', 22, '#ffd36a', { strokeThickness: 5 }).setOrigin(1, 0.5));
+  }
+  logAdd(K, s, label, col, crit, chain, cv, neg) {
+    if (!this.logC) return;
+    const c = this.logC, y0 = LOG_Y + 6, RH = LOG_RH, put = (o) => { hudAdd(this, o); c.add(o); return o; };
+    let icon = null, name = label, val = '', marks = [];
+    if (K === 'hit') {
+      const h = s.h; icon = h.it ? ['icons', h.it.frame] : ['hero_idle', 0];
+      name = h.it ? h.it.name : t('logHero'); val = neg ? '−' + fmt(-h.v) : fmt(h.v);
+      if (h.echo) marks.push([t('echoTag'), '#9ae8ff']); if (crit) marks.push([t('logCrit'), '#fff2a0']); if (chain && cv) marks.push(['+' + fmt(cv), '#ffe866']);
+    } else if (K === 'batch') {
+      const it = (s.hs.find((h) => h.it) || {}).it; icon = it ? ['icons', it.frame] : ['hero_idle', 0];
+      name = t('logBatch', s.hs.length); val = label.replace(/ ×\d+$/, ''); if (crit) marks.push([t('logCrit'), '#fff2a0']);
+    } else icon = ['el_' + (K === 'vuln' ? 'Ice' : K === 'seal' ? s.el : 'Fire'), null];
+    const n = this.logRows.length, yy = y0 + Math.min(n, LOG_N) * RH + RH / 2;
+    const row = [];
+    if (icon) { const im = put(icon[1] === null ? this.add.image(22, yy, icon[0]).setScale(1.2) : this.add.image(22, yy, icon[0], icon[1]).setScale(icon[0] === 'icons' ? 0.6 : 0.7)); if (icon[0] === 'hero_idle') im.setCrop(14, 8, 36, 30); row.push(im); }
+    let rx = W - 18;
+    if (val) { const v = put(txt(this, rx, yy, val, 17, neg ? '#c890ff' : crit ? '#ffffff' : col, { strokeThickness: 4, stroke: crit ? '#c8102a' : '#140812' }).setOrigin(1, 0.5)); row.push(v); rx -= v.width + 8; }
+    marks.slice().reverse().forEach(([m, mc]) => { const mt = put(txt(this, rx, yy, m, 16, mc, { strokeThickness: 3 }).setOrigin(1, 0.5)); row.push(mt); rx -= mt.width + 6; });
+    const nm = put(txt(this, 40, yy, name, 16, val ? '#e8dcc8' : col, { strokeThickness: 4 }).setOrigin(0, 0.5)); clipText(nm, Math.max(60, rx - 46)); row.push(nm);
+    this.logRows.push(row); window.DC.hitLog.push([name, val, marks.map((m) => m[0]).join(' ')]);
+    const fast = Math.min(110, (this.res.hits.length > 8 ? 70 : 110));
+    row.forEach((o) => { o.alpha = 0; o.x += 18; this.tweens.add({ targets: o, alpha: 1, x: o.x - 18, duration: fast }); });
+    if (n >= LOG_N) {   // full: everything scrolls up one row, rows that leave the top are dropped
+      this.logRows.forEach((r) => r.forEach((o) => this.tweens.add({ targets: o, y: o.y - RH, duration: fast, ease: 'Quad.out' })));
+      const gone = this.logRows.splice(0, this.logRows.length - LOG_N - 1); gone.forEach((r) => r.forEach((o) => o.destroy()));
+    }
+  }
+  logEnd() { const o = this.logObjs || []; this.logObjs = []; this.logC = null; this.tweens.add({ targets: o, alpha: 0, duration: 250, onComplete: () => o.forEach((q) => q.destroy()) }); }
   // dual-element combo callout (MELT / SUPERCONDUCT / OVERLOAD): a banner under the hit counter
   comboPop(label, css, col) {
     const y = 404 + (this.comboN || 0) * 40; this.comboN = (this.comboN || 0) + 1;
@@ -1912,6 +1965,7 @@ class Strike extends Phaser.Scene {
   stageClear() {
     window.DC.phase = 'stage-clear';
     this.tweens.add({ targets: [this.dmg, this.br, this.okT, this.rays, this.dmgLabel, this.hitsT].filter(Boolean), alpha: 0, duration: 250 });
+    this.logEnd();
     const N = (n) => Math.max(4, Math.round(n * this.lite()));
     sfx(this, 'banner', 0.8); sfx(this, 'rare', 0.5);
     this.tweens.add({ targets: this.hero, x: W / 2 - 40, duration: 400 });
@@ -2033,7 +2087,7 @@ class Strike extends Phaser.Scene {
   }
   loseSeq() {
     // the boss lunges and EATS the hero
-    window.DC.phase = 'eating';
+    window.DC.phase = 'eating'; this.logEnd();
     this.tweens.add({ targets: [this.dmg, this.br, this.okT, this.rays, this.dmgLabel, this.hitsT].filter(Boolean), alpha: 0, duration: 250 });
     const cam = this.cameras.main, c = this.cfg, s0 = c.scale, b = this.boss;
     this.record(this.res, true);
