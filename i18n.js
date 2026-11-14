@@ -782,6 +782,28 @@ es: { elemT: 'ELEMENTOS', comboT: 'COMBOS', allT: 'Todo', cursedT: 'Maldito', no
 /*</es>*/
 };
 for (const l of LANGS) Object.assign(I18N[l], I18N11[l]);
+// v8.1: small landscape frames (the X feed) show a readable cover instead of a shrunken portrait game
+const I18N12 = {
+/*<en>*/
+en: { coverPlay: 'Tap to play', coverSub: 'Pick 1 of 3 chests · strike the boss', coverRotate: 'Turn your phone upright to play', coverOpen: 'Opened in a new tab' },
+/*</en>*/
+/*<zh>*/
+zh: { coverPlay: '点击开玩', coverSub: '三选一开宝箱 · 挥刀砍向 Boss', coverRotate: '请竖屏游玩', coverOpen: '已在新标签页打开' },
+/*</zh>*/
+/*<ja>*/
+ja: { coverPlay: 'タップでプレイ', coverSub: '3つの宝箱から1つ選んでボスを斬れ', coverRotate: 'スマホを縦向きにしてプレイ', coverOpen: '新しいタブで開きました' },
+/*</ja>*/
+/*<ko>*/
+ko: { coverPlay: '탭해서 플레이', coverSub: '상자 3개 중 1개 선택 · 보스를 베어라', coverRotate: '휴대폰을 세로로 돌려 플레이하세요', coverOpen: '새 탭에서 열었습니다' },
+/*</ko>*/
+/*<pt>*/
+pt: { coverPlay: 'Toque para jogar', coverSub: 'Escolha 1 de 3 baús · golpeie o chefe', coverRotate: 'Gire o celular na vertical para jogar', coverOpen: 'Aberto em uma nova aba' },
+/*</pt>*/
+/*<es>*/
+es: { coverPlay: 'Toca para jugar', coverSub: 'Elige 1 de 3 cofres · golpea al jefe', coverRotate: 'Pon el móvil en vertical para jugar', coverOpen: 'Abierto en una pestaña nueva' },
+/*</es>*/
+};
+for (const l of LANGS) Object.assign(I18N[l], I18N12[l]);
 const NOUN_KEYS = ['Sword', 'Dagger', 'Mace', 'Bow', 'Axe', 'Blade', 'Staff', 'Spear', 'Armor', 'Boots', 'Helm', 'Amulet', 'Ring', 'Pendant', 'Medal', 'Talisman', 'Relic', 'Idol', 'Grimoire', 'Shard'];
 const CJK_FONT = { zh: 'FusionZH', ja: 'FusionJA', ko: 'FusionKO' };
 function detectLang() {

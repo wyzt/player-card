@@ -1173,8 +1173,10 @@ class Pick extends Phaser.Scene {
         const shine = this.add.image(x, base + 10, 'chest_' + chestKey(c)).setScale(CHEST_SC).setOrigin(0.5, 1).setTintFill(0xfff4c0).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0);
         this.tweens.add({ targets: shine, alpha: 0.28, yoyo: true, repeat: -1, duration: 520, repeatDelay: 900, ease: 'Sine.inOut' });
         const gs = this.add.particles(x, base - 60, 'px', { x: { min: -66, max: 66 }, y: { min: -70, max: 50 }, lifespan: 700, speedY: { min: -40, max: -12 }, scale: { start: 2.2, end: 0 }, frequency: 70, tint: [0xffe27a, 0xffffff, 0xffc040], blendMode: 'ADD' });
-        const tag = txt(this, x, base - 160, t('hqTag'), 16, '#ffe27a', { strokeThickness: 5, stroke: '#4a2a00', maxW: CW - 14 });
-        const pill = this.add.rectangle(x, base - 160, Math.min(CW, tag.displayWidth + 20), 28, 0x3a2200, 0.9).setStrokeStyle(2, 0xffd84a);
+        let tag = txt(this, x, base - 160, t('hqTag'), 16, '#ffe27a', { strokeThickness: 5, stroke: '#4a2a00', maxW: CW - 14 });
+        if (parseFloat(tag.style.fontSize) < 16) { tag.destroy(); tag = txtW(this, x, 0, t('hqTag'), 16, '#ffe27a', CW - 14, { strokeThickness: 5, stroke: '#4a2a00' }); tag.setOrigin(0.5); tag.y = base - 156; }
+        const pill = this.add.rectangle(x, tag.y, Math.min(CW, tag.displayWidth + 20), Math.max(28, tag.height + 6), 0x3a2200, 0.9).setStrokeStyle(2, 0xffd84a);
+        window.DC.hqTag = { size: parseFloat(tag.style.fontSize), lines: tag.text.split('\n').length };
         tag.setDepth(2); pill.setDepth(1.9);
         this.tweens.add({ targets: [tag, pill], scale: 1.07, yoyo: true, repeat: -1, duration: 600, ease: 'Sine.inOut' });
         spr.setDepth(0.5); shine.setDepth(0.6);
@@ -1404,7 +1406,7 @@ class Pick extends Phaser.Scene {
       tag.y = t1.y = -h / 2 + 14 + 13; t2.y = -h / 2 + 46; t3.y = t2.y + t2.height + 6;
       const pg = panel(this, -CWd / 2, -h / 2, CWd, h, { border: R.col });
       card.add([pg, tag, t1, t2, t3]); card.setAlpha(0); window.DC.cardBox = { y: CARD_Y - h / 2, h };
-      if (it.greedy) { const gt = txt(this, CWd / 2 - 80, -h / 2 - 10, t('greedPop'), 16, '#ffd84a', { strokeThickness: 4, maxW: 150 }); card.add(gt); window.DC.greedy = (window.DC.greedy || 0) + 1; }
+      if (it.greedy) { const gt = txt(this, 0, -h / 2 - 10, t('greedPop'), 16, '#ffd84a', { strokeThickness: 4, maxW: CWd - 40 }); gt.x = CWd / 2 - 12 - gt.width / 2; card.add(gt); window.DC.greedy = (window.DC.greedy || 0) + 1; }
       this.tweens.add({ targets: card, alpha: 1, duration: 150 }); popText(this, card, 1);
     });
     // the item flies into the GEAR panel; merge / upgrade / salvage / curse animate there
@@ -2118,5 +2120,35 @@ function startGame() {
 if (typeof Phaser !== 'undefined') {
   // make sure the pixel font (and the CJK pixel font for zh/ja/ko) is ready before any Phaser text is drawn (max 3s wait)
   setLang(LANG);
-  loadLangFont(LANG).then(startGame, startGame);
+  loadLangFont(LANG).then(boot, boot);
+}
+// ---- small landscape frames (the X feed player, ~500x380 / 640x480): a readable cover instead of a shrunken portrait game ----
+// big landscape (desktop 1200x628) keeps the letterboxed portrait game; portrait phones play directly
+function coverMode() { const w = window.innerWidth, h = window.innerHeight; return w > h && h < 520; }
+function boot() { if (coverMode() && !/[?&]nocover/.test(location.search)) showCover(); else startGame(); }
+function showCover() {
+  const DC = window.DC; DC.phase = 'cover'; DC.cover = { shown: true, taps: 0, action: null };
+  const el = document.createElement('div'); el.id = 'cover'; el.setAttribute('role', 'button');
+  el.innerHTML = `<div class="cv-t">${t('title')}</div><div class="cv-s">${t('coverSub')}</div>
+    <div class="cv-b"><span></span></div><div class="cv-p">${t('coverPlay')}</div><div class="cv-n"></div>`;
+  el.style.fontFamily = fontFor(LANG);
+  document.body.appendChild(el);
+  const note = el.querySelector('.cv-n');
+  const done = () => { window.removeEventListener('resize', check); el.remove(); DC.cover.shown = false; startGame(); };
+  const check = () => { if (!coverMode()) done(); };
+  window.addEventListener('resize', check);
+  el.addEventListener('click', () => {
+    DC.cover.taps++;
+    const de = document.documentElement, rf = de.requestFullscreen || de.webkitRequestFullscreen;
+    let p = null; try { p = rf ? rf.call(de) : null; } catch (e) { p = null; }
+    // full screen granted -> the resize listener starts the game; still a small landscape (phone held sideways / blocked
+    // inside an iframe) -> open the same page in a new tab (portrait in-app browser / a big desktop tab)
+    const fallback = () => {
+      if (!coverMode()) return done();
+      const w = window.open(location.href.split('#')[0], '_blank');
+      DC.cover.action = w ? 'tab' : 'rotate'; note.textContent = w ? t('coverOpen') : t('coverRotate');
+    };
+    DC.cover.action = 'fullscreen';
+    Promise.resolve(p).then(() => setTimeout(fallback, 500), fallback);
+  });
 }
