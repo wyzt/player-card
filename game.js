@@ -751,7 +751,7 @@ function heroGlow(spr) { try { if (spr.preFX) spr.preFX.addGlow(0xfff2b0, 3, 0, 
 
 // ---- endless run state, records, gear-event labels
 // after a pick the item card + gear peek stay up this much longer (tap anywhere to continue sooner)
-const READ_MS = 3200, PEEK_MS = 600000;
+const READ_MS = 3200, PEEK_MS = 600000, MISS_MS = 3000;
 // hero POWER: a fixed HUD chip in the top-left corner on every screen (pick, reveal, pre-strike, strike, stage clear, stage card)
 // It is drawn by its own fixed UI camera, so camera zoom / pan / shake never move it off screen.
 function hudCamera(scene) {
@@ -1317,7 +1317,7 @@ class Title extends Phaser.Scene {
 
 class Pick extends Phaser.Scene {
   constructor() { super('pick'); }
-  init(d) { this.run = d.run; this.s = this.run.s; this.G = this.run.G; this.locked = true; this.done = false; this.canSkip = false; this.autoNext = null; this.dim = null; this.inv = [];
+  init(d) { this.run = d.run; this.s = this.run.s; this.G = this.run.G; this.locked = true; this.done = false; this.canSkip = false; this.autoNext = null; this.dim = null; this.inv = []; this.missObjs = [];
     this.statsHidden = false; this.statsLocked = false; this.gearOpen = false; this.gearPinned = false; this.peekT = null; this.drag = null; this.hoverPow = false; this.hoverPop = false; this.uiCam = null; }
   get items() { return gearList(this.G); }
   pw() { return strikeDist(this.G, this.s); }
@@ -1475,25 +1475,35 @@ class Pick extends Phaser.Scene {
     if (big) this.cameras.main.shake(dur, leg ? 0.004 : 0.0025);
     this.time.delayedCall(dur, () => { shaker.remove(); ch.spr.setPosition(ch.x, ch.y + 92).setAngle(0); leaks.forEach((l) => this.tweens.add({ targets: l, alpha: 0, duration: 200, onComplete: () => l.destroy() })); this.reveal(ch, it); });
   }
-  // the two chests you did NOT pick: pop open greyed out to show what you missed, then sink away (~1s)
+  // v9.1: the two chests you did NOT pick pop open greyed out, showing rarity + name
+  // (16px, wrapped) on the chest body so they stay clear of the picked-item card.
+  // Labels stay readable for ~2.7s, then sink; tap-anywhere skip is canSkip / next().
   reject(o) {
     const mr = openChest(o.c, Math.random, this.s), miss = nameItem(mr);
+    const R = RARITY[miss.rarity], CW = 136;
     window.DC.missed.push({ name: miss.name, rule: ruleText(miss), rarity: miss.rarity });
     this.tweens.killTweensOf([o.spr, o.glow, o.gem]);
     this.tweens.add({ targets: [o.glow, o.gem], alpha: 0, duration: 150 });
     this.time.delayedCall(110, () => {
       o.spr.setTexture('open_' + chestKey(o.c)).setTint(0x6a6a6a);
       this.tweens.add({ targets: o.spr, angle: { from: -6, to: 0 }, duration: 160 });
-      const ic = this.add.image(o.x, o.y + 10, 'icons', miss.frame).setScale(1.2).setTint(0x8a8a8a).setAlpha(0.9).setDepth(5);
+      const ic = this.add.image(o.x, o.y + 10, 'icons', miss.frame).setScale(1.2).setTint(0x8a8a8a).setAlpha(0.9).setDepth(12);
       this.tweens.add({ targets: [o.label, o.el], alpha: 0, duration: 120 });
-      const ms = txt(this, o.x, CHEST_BASE + 26, t('missed'), 16, '#a89ab8', { strokeThickness: 4, maxW: 136 }).setDepth(5).setAlpha(0);
-      const rt = txtW(this, o.x, CHEST_BASE + 40, ruleText(miss), 16, '#b8b0c0', 136).setDepth(5).setAlpha(0);
+      // sit on the chest body (o.y ≈ 420), above the full-width item card at ~601
+      let y = o.y + 8;
+      const ms = txtW(this, o.x, y, t('missed'), 16, '#a89ab8', CW).setDepth(12).setAlpha(0);
+      y += ms.height + 1;
+      const rar = txtW(this, o.x, y, t('rar')[miss.rarity], 16, R.css, CW).setDepth(12).setAlpha(0);
+      y += rar.height + 1;
+      const nm = txtW(this, o.x, y, miss.name, 16, miss.cursed ? '#d9a6ff' : EL_CSS[miss.element], CW).setDepth(12).setAlpha(0);
+      this.missObjs = (this.missObjs || []).concat([ic, ms, rar, nm]);
       this.tweens.add({ targets: ic, y: o.y - 60, scale: 2, duration: 260, ease: 'Back.out' });
-      this.tweens.add({ targets: [rt, ms], alpha: 1, duration: 180, delay: 120 });
-      // sink + fade
-      this.time.delayedCall(750, () => {
+      this.tweens.add({ targets: [ms, rar, nm], alpha: 1, duration: 180, delay: 120 });
+      // fade-in finishes at +300ms; MISS_MS=3000 keeps text readable ~2.7s, then sink
+      this.time.delayedCall(MISS_MS, () => {
+        if (this.done) return;
         this.tweens.add({ targets: [o.spr, o.label, o.el], y: '+=46', alpha: 0, duration: 320, ease: 'Quad.in' });
-        this.tweens.add({ targets: [ic, rt, ms], alpha: 0, y: '-=16', duration: 320 });
+        this.tweens.add({ targets: [ic, ms, rar, nm], alpha: 0, y: '-=16', duration: 320 });
       });
     });
   }
