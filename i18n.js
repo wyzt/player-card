@@ -1040,14 +1040,13 @@ es: {
 };
 for (const l of LANGS) Object.assign(I18N[l], I18N18[l]);
 
-// v9.2: title hooks — short, punchy, 4 lines. Strike / overkill / curse details stay in tooltips.
+// v9.2 / v9.3: title hooks — short, punchy, 3 lines (the endless-bosses / exploding-numbers line was dropped). Strike / overkill / curse details stay in tooltips.
 const I18N19 = {
 /*<en>*/
 en: {
   sub1: 'Pick 1 of 3. Stacks forever!',
   sub3: 'One swing — every weapon hits!',
   sub4: 'More overkill, better loot',
-  sub2: 'Endless bosses. Numbers boom!',
 },
 /*</en>*/
 /*<zh>*/
@@ -1055,7 +1054,6 @@ zh: {
   sub1: '三选一开箱，装备无限叠加！',
   sub3: '一刀下去，所有武器齐砸！',
   sub4: '伤害溢出越多，掉落越好',
-  sub2: 'Boss 无穷无尽，数字一路爆炸',
 },
 /*</zh>*/
 /*<ja>*/
@@ -1063,7 +1061,6 @@ ja: {
   sub1: '宝箱は三択。装備は無限積み！',
   sub3: '一撃で全武器が同時攻撃！',
   sub4: 'オーバーキルほど良い戦利品',
-  sub2: 'ボス無限、数字は爆発する！',
 },
 /*</ja>*/
 /*<ko>*/
@@ -1071,7 +1068,6 @@ ko: {
   sub1: '3개 중 1개! 장비는 무한 중첩!',
   sub3: '한 번에, 모든 무기가 함께 내려친다!',
   sub4: '초과 피해가 클수록 전리품이 더 좋다',
-  sub2: '끝없는 보스, 숫자는 폭발한다!',
 },
 /*</ko>*/
 /*<pt>*/
@@ -1079,7 +1075,6 @@ pt: {
   sub1: 'Escolha 1 de 3. Itens eternos!',
   sub3: 'Um golpe — todas as armas!',
   sub4: 'Mais excesso, melhor saque',
-  sub2: 'Chefes sem parar. Tudo explode!',
 },
 /*</pt>*/
 /*<es>*/
@@ -1087,7 +1082,6 @@ es: {
   sub1: 'Elige 1 de 3. ¡Equipo eterno!',
   sub3: '¡Un golpe, todas las armas!',
   sub4: 'Más exceso, mejor botín',
-  sub2: 'Jefes sin parar, ¡todo explota!',
 },
 /*</es>*/
 };
