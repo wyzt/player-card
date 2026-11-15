@@ -533,6 +533,7 @@ window.DC = { phase: 'boot', round: 0 };
 // test hook: DC.jump(20) starts stage 21 with gear built by 20 stages of picks
 window.DC.jump = (n, seed, scene, bare) => {
   const g = window.game, R = jumpRun(n, seed); if (bare) R.G = newGear(R.G.seed);
+  if (window.DC.jumpWeapons) padJumpWeapons(R.G, window.DC.jumpWeapons, seed);
   const act = g.scene.getScenes(true), key = scene || (isBig(n) ? 'intro' : 'pick');
   act.slice(1).forEach((sc) => sc.scene.stop());
   if (act[0]) act[0].scene.start(key, { run: R }); else g.scene.start(key, { run: R });
@@ -557,6 +558,32 @@ function fitText(o, maxW, size) {
 function setFit(o, s) { o.setFontSize(o.__size + 'px'); o.setText(s); if (o.__maxW) fitText(o, o.__maxW, o.__size); return o; }
 // cut a single-line text with an ellipsis until it fits
 function clipText(o, maxW) { const full = o.text; let n = full.length; while (o.width > maxW && n > 1) { n--; o.setText(full.slice(0, n) + '…'); } return o; }
+// v9.2: accelerating per-hit cadence so a long volley still finishes in the ~6s budget
+function planHitGaps(n, budget) {
+  if (n <= 0) return [];
+  const start = n <= 8 ? 260 : n <= 20 ? 180 : n <= 50 ? 120 : 70;
+  const end = n <= 8 ? 140 : n <= 20 ? 60 : n <= 50 ? 36 : 14;
+  const gaps = [];
+  for (let i = 0; i < n; i++) {
+    const u = n === 1 ? 0 : i / (n - 1);
+    gaps.push(start + (end - start) * (u * u));
+  }
+  const sum = gaps.reduce((a, b) => a + b, 0);
+  if (sum > budget) {
+    for (let i = 0; i < n; i++) gaps[i] = Math.max(8, gaps[i] * (budget / sum));
+    const s2 = gaps.reduce((a, b) => a + b, 0);
+    if (s2 > budget) for (let i = 0; i < n; i++) gaps[i] *= budget / s2;
+  }
+  return gaps;
+}
+// test hook: DC.jumpWeapons = N pads the jumped run with extra named weapons before the scene starts
+function padJumpWeapons(G, n, seed) {
+  let x = ((seed || 1) + 0x51ed) >>> 0;
+  const rng = () => { x = (x + 0x6D2B79F5) >>> 0; let t2 = x; t2 = Math.imul(t2 ^ (t2 >>> 15), t2 | 1); t2 ^= t2 + Math.imul(t2 ^ (t2 >>> 7), t2 | 61); return ((t2 ^ (t2 >>> 14)) >>> 0) / 4294967296; };
+  const have = G.items.filter((i) => i.kind === 'weapon').length, need = Math.max(0, n - have);
+  const st = Math.max(1, (G.items[G.items.length - 1] || {}).stage || 1);
+  for (let i = 0; i < need; i++) G.items.push(nameItem(mkWeapon(ELEMENTS[i % ELEMENTS.length], Math.min(4, 2 + (i % 3)), st, rng)));
+}
 function sfx(scene, key, vol = 0.8) { try { scene.sound.play(key, { volume: vol }); } catch (e) {} }
 // tiny procedural WebAudio hits (no files): only after the audio context is unlocked by a tap, honours mute / master volume.
 // 'hit' = a blip whose pitch rises one semitone per hit in the volley; 'crit' = a heavy low thump + bright ping; 'windup' = a rising whoosh
@@ -1186,9 +1213,12 @@ const UI = {
   openGear(filter = null) { openStats(this, filter); },
   closeGear() { closeStats(this); },
   setupGearInput() {
-    this.input.on('pointermove', (p) => { const d = this.pageDrag; if (!d || !p.isDown || !this.pageC) return; const dy = p.y - d.y; if (Math.abs(dy) > 6) d.moved = true; if (d.moved) { if (this.tip && this.tip.visible) this.tip.hide(true); pageScrollTo(this, d.s0 - dy); } });
-    this.input.on('pointerup', () => { this.time.delayedCall(0, () => { this.pageDrag = null; }); });
-    this.input.on('wheel', (p, over, dx, dy) => { if (this.gearOpen) pageScrollTo(this, this.pageScroll + dy * 0.6); });
+    this.input.on('pointermove', (p) => {
+      const d = this.pageDrag; if (d && p.isDown && this.pageC) { const dy = p.y - d.y; if (Math.abs(dy) > 6) d.moved = true; if (d.moved) { if (this.tip && this.tip.visible) this.tip.hide(true); pageScrollTo(this, d.s0 - dy); } }
+      const ld = this.logDrag; if (ld && p.isDown && this.logC) { const dy = p.y - ld.y; if (Math.abs(dy) > 4) ld.moved = true; if (ld.moved) this.logSetScroll(ld.s0 - dy); }
+    });
+    this.input.on('pointerup', () => { this.time.delayedCall(0, () => { this.pageDrag = null; if (this.logEndDrag) this.logEndDrag(); }); });
+    this.input.on('wheel', (p, over, dx, dy) => { if (this.gearOpen) pageScrollTo(this, this.pageScroll + dy * 0.6); else if (this.logOnWheel) this.logOnWheel(p, dy); });
   },
 };
 // fly an item icon into its bottom-bar slot (optional label above it), bump the slot
@@ -1833,17 +1863,24 @@ class Strike extends Phaser.Scene {
     this.dmg = hudAdd(this, txt(this, TX, TY, '', 72, '#ffffff', { strokeThickness: 12 }).setDepth(46)).setAlpha(0); this.dmgOn = false;
     this.br = hudAdd(this, txt(this, TX, TY + 50, '', 16, '#ffffff', { strokeThickness: 4, maxW: W - 20 }).setDepth(45));
     this.dmgScale = 1; this.shown = 0;
-    this.logInit();
-    // the strike plays as a volley: curse / frostbite notes first, then EVERY hit on its own (the hero, then each weapon with
-    // its own roll and its own crit), THUNDER chains on the hits that fork, and FIRE burn ticks last. The whole volley is
-    // squeezed into ~3s: the cadence speeds up with more weapons and above 15 hits the pops are batched.
+    this.logInit(); this.popLive = []; window.DC.pops = [];
+    // the strike plays as a volley: curse / frostbite notes first, then EVERY hit on its own row (the hero, then each
+    // weapon with its own roll and its own crit — rows are never merged). THUNDER chains hang on the hits that fork,
+    // and FIRE burn ticks come last. The whole volley is squeezed into ~6s even with hundreds of weapons: later hits
+    // arrive faster (accelerating cadence) and only notable damage pops (crits / biggest hits) float on screen.
     const steps = [];
     r.off.forEach((el) => steps.push({ kind: 'seal', el }));
     if (r.weak < 1) steps.push({ kind: 'weak', v: r.weak });
     if (r.S.vuln > 1) steps.push({ kind: 'vuln', v: r.S.vuln });
-    const nPre = steps.length, H = r.hits, nH = H.length, B = nH > 15 ? Math.ceil(nH / 12) : 1;
-    for (let k = 0; k < nH; k += B) { const hs = H.slice(k, k + B); steps.push(B > 1 ? { kind: 'batch', hs, from: k } : { kind: 'hit', h: hs[0], from: k }); }
-    const nVol = steps.length - nPre;
+    const nPre = steps.length, H = r.hits, nH = H.length;
+    const POP_CAP = Math.min(20, Math.max(8, Math.ceil(nH / 20)));
+    const scored = H.map((h, i) => ({ i, n: !!(h.crit || h.v < 0), d: Math.abs((h.v || 0) + (h.cv || 0)) }));
+    scored.sort((a, b) => (b.n - a.n) || (b.d - a.d));
+    const popIdx = new Set(scored.slice(0, POP_CAP).map((x) => x.i)); if (nH) popIdx.add(0);
+    const postN = (r.boom > 0 ? 1 : 0) + ((r.ticks && r.ticks.length && r.stacks > 0) ? 1 : 0) + Math.min((r.ticks || []).length, 4) + (r.executed ? 1 : 0);
+    const hitBudget = Math.max(600, 5200 - nPre * 200 - postN * 240 - (r.executed ? 660 : 0));
+    const hitGaps = planHitGaps(nH, hitBudget);
+    for (let k = 0; k < nH; k++) steps.push({ kind: 'hit', h: H[k], from: k, pop: popIdx.has(k), gap: hitGaps[k] || 40 });
     if (r.boom > 0) steps.push({ kind: 'boom', v: r.boom });
     const nb = r.ticks.length, shownTicks = nb > 4 ? 3 : nb, tc = r.tcrit || [];
     // v9: FIRE stacks first (Fire hits + OVERLOAD bolts), then the ticks; MELT ticks can crit
@@ -1851,9 +1888,10 @@ class Strike extends Phaser.Scene {
     for (let k = 0; k < shownTicks; k++) steps.push({ kind: 'burn', v: r.ticks[k], n: 1, crit: !!tc[k] });
     if (nb > shownTicks) { const rest = r.ticks.slice(shownTicks); steps.push({ kind: 'burn', v: rest.reduce((a, x) => a + x, 0), n: nb - shownTicks, crit: tc.slice(shownTicks).some(Boolean), nc: tc.slice(shownTicks).filter(Boolean).length }); }
     if (r.executed) steps.push({ kind: 'exec' });
-    const hitGap = Phaser.Math.Clamp(2400 / Math.max(1, nVol), 95, 300);
-    window.DC.result.nsteps = steps.length; window.DC.result.batch = B; window.DC.result.hitGap = Math.round(hitGap);
-    window.DC.result.seqMs = Math.round(nPre * 230 + nVol * hitGap + Math.min(nb, 4) * 230 + (nb && r.stacks > 0 ? 420 : 0));
+    const hitGap = nH ? Math.round(hitGaps.reduce((a, b) => a + b, 0) / nH) : 0;
+    window.DC.result.nsteps = steps.length; window.DC.result.batch = 1; window.DC.result.perHitLog = true;
+    window.DC.result.hitGap = hitGap; window.DC.result.popN = popIdx.size;
+    window.DC.result.seqMs = Math.round(260 + nPre * 200 + hitGaps.reduce((a, b) => a + b, 0) + (nb && r.stacks > 0 ? 240 : 0) + Math.min(nb, 4) * 200 + (r.boom > 0 ? 240 : 0) + (r.executed ? 900 : 0));
     let sum = 0, burn = 0, next = 1, hitsDone = 0;
     const show = (v) => {
       if (!this.dmgOn) { if (!(v > 0)) return; this.dmgOn = true; this.dmg.setAlpha(1); popText(this, this.dmg, 1); if (this.logV) this.logV.setAlpha(1); }
@@ -1868,35 +1906,105 @@ class Strike extends Phaser.Scene {
     // hit counter: "x37 HITS"
     this.hitsT = hudAdd(this, txt(this, TX, TY - 86, ' ', 22, '#ffe066', { strokeThickness: 6, stroke: '#2a1404', maxW: W - 40 }).setDepth(46));
     window.DC.popped = 0; this.burnI = 0; this.lastTick = 0;
-    let shown = 0;
-    const runStep = (k) => {
-      if (k >= steps.length) return this.afterCount(r, show, () => next);
+    let shown = 0, kStep = 0;
+    const gapOf = (s) => s.kind === 'hit' ? (s.gap || 40) : s.kind === 'exec' ? 900 : s.kind === 'burn' ? 200 : (s.kind === 'boom' || s.kind === 'stack') ? 240 : 200;
+    const at = []; for (let i = 0, tt = 0; i < steps.length; i++) { at.push(tt); tt += gapOf(steps[i]); }
+    const hitLabel = () => r.combo > 1.005 ? t('hitsCombo', hitsDone, (1 + r.S.combo * (hitsDone - 1)).toFixed(2)) : t('hits', hitsDone);
+    const applyStep = (k, quiet) => {
       const s = steps[k], K = s.kind;
       if (K === 'hit' || K === 'batch') {
         (K === 'hit' ? [s.h] : s.hs).forEach((h) => { sum = capN(Math.max(0, sum + h.v + h.cv)); });
         hitsDone += K === 'hit' ? 1 : s.hs.length; this.hitIdx = hitsDone;
-        if (!this.dmgPulse) { this.tweens.killTweensOf(this.dmg); this.dmg.setScale(this.dmgScale * 1.14); this.tweens.add({ targets: this.dmg, scale: this.dmgScale, duration: 110, ease: 'Quad.out' }); }   // the total bumps on every hit
-        setFit(this.hitsT, r.combo > 1.005 ? t('hitsCombo', hitsDone, (1 + r.S.combo * (hitsDone - 1)).toFixed(2)) : t('hits', hitsDone)); this.tweens.killTweensOf(this.hitsT); this.hitsT.setScale(1.3); this.tweens.add({ targets: this.hitsT, scale: 1, duration: 120 });
       } else if (K === 'burn') burn += s.v;
       else if (K === 'boom') sum = capN(sum + s.v);
-      if (K === 'exec') { this.executeFx(r); window.DC.popped = k + 1; this.time.delayedCall(900, () => runStep(k + 1)); return; }
-      const target = k === steps.length - 1 || steps[k + 1] && steps[k + 1].kind === 'exec' && k === steps.length - 2 ? r.total : capN(sum + burn);
-      this.popNumber(s, k);
+      if (K === 'exec') { this.executeFx(r); window.DC.popped = k + 1; return capN(sum + burn); }
+      const target = k === steps.length - 1 || (steps[k + 1] && steps[k + 1].kind === 'exec' && k === steps.length - 2) ? r.total : capN(sum + burn);
+      if (quiet && K === 'hit') { const keep = s.pop; s.pop = false; this.popNumber(s, k); s.pop = keep; }
+      else this.popNumber(s, k);
       window.DC.popped = k + 1;
-      const c = { v: shown }, gap = K === 'burn' ? 230 : K === 'hit' || K === 'batch' ? hitGap : K === 'boom' || K === 'stack' ? 420 : 230;
-      this.tweens.add({ targets: c, v: target, duration: gap * 0.8, ease: 'Cubic.out', onUpdate: () => show(c.v), onComplete: () => { shown = target; show(target); } });
-      this.time.delayedCall(gap, () => runStep(k + 1));
+      return target;
     };
-    this.time.delayedCall(260, () => runStep(0));
+    const t0 = this.time.now + 260;
+    const runDue = () => {
+      if (kStep >= steps.length) return this.afterCount(r, show, () => next);
+      const now = this.time.now, due = [];
+      while (kStep < steps.length && t0 + at[kStep] <= now + 1) {
+        due.push(kStep); kStep++;
+        if (steps[due[due.length - 1]].kind === 'exec') break;
+      }
+      if (!due.length) { this.time.delayedCall(Math.max(4, t0 + at[kStep] - this.time.now), runDue); return; }
+      const quiet = due.length > 3;
+      let lastTarget = shown, gotHit = false, lastKind = '';
+      due.forEach((k, i) => {
+        lastKind = steps[k].kind;
+        lastTarget = applyStep(k, quiet && i < due.length - 1);
+        if (lastKind === 'hit' || lastKind === 'batch') gotHit = true;
+      });
+      const gap = gapOf(steps[due[due.length - 1]]);
+      if (gotHit) {
+        setFit(this.hitsT, hitLabel());
+        if (!quiet && gap > 40 && !this.dmgPulse) { this.tweens.killTweensOf(this.dmg); this.dmg.setScale(this.dmgScale * 1.14); this.tweens.add({ targets: this.dmg, scale: this.dmgScale, duration: 110, ease: 'Quad.out' }); }
+        if (!quiet && gap > 40) { this.tweens.killTweensOf(this.hitsT); this.hitsT.setScale(1.3); this.tweens.add({ targets: this.hitsT, scale: 1, duration: 120 }); }
+      }
+      if (!quiet && gap >= 40 && lastKind !== 'exec') {
+        const c = { v: shown };
+        this.tweens.add({ targets: c, v: lastTarget, duration: gap * 0.8, ease: 'Cubic.out', onUpdate: () => show(c.v), onComplete: () => { shown = lastTarget; show(lastTarget); } });
+      } else { shown = lastTarget; show(lastTarget); }
+      if (kStep >= steps.length) return this.afterCount(r, show, () => next);
+      if (lastKind === 'exec') { this.time.delayedCall(900, runDue); return; }
+      this.time.delayedCall(Math.max(4, t0 + at[kStep] - this.time.now), runDue);
+    };
+    this.time.delayedCall(260, runDue);
     this.tweens.add({ targets: this.hero, x: HERO_X, duration: 500, delay: 300, ease: 'Quad.out' });
   }
   // one floating number bursting out of the boss (a hit, a batch of hits, a burn tick or a curse / frostbite note)
+  // world point -> UI / screen point (floats are drawn on the UI camera so zoom / pan can't throw them off-screen)
+  worldToUi(x, y) {
+    const cam = this.cameras.main; if (!cam) return { x, y };
+    return { x: (x - cam.midPoint.x) * cam.zoom + cam.width / 2, y: (y - cam.midPoint.y) * cam.zoom + cam.height / 2 };
+  }
+  // pick a screen slot under the HUD / above the hit log that doesn't sit on another live pop
+  popPlace(prefX, prefY, w, h) {
+    const top = 222, bot = LOG_Y - 8, halfW = w / 2, halfH = h / 2;
+    const minX = 8 + halfW, maxX = W - 8 - halfW, minY = top + halfH, maxY = bot - halfH;
+    const now = this.time.now;
+    this.popLive = (this.popLive || []).filter((p) => p.until > now);
+    const overlap = (x, y) => this.popLive.some((p) => Math.abs(p.x - x) < (p.w + w) / 2 + 8 && Math.abs(p.y - y) < (p.h + h) / 2 + 10);
+    const clamp = (x, y) => ({ x: Phaser.Math.Clamp(x, minX, maxX), y: Phaser.Math.Clamp(y, minY, maxY) });
+    let { x, y } = clamp(prefX, prefY);
+    if (overlap(x, y)) {
+      const stepY = Math.max(56, h + 12), stepX = Math.max(90, Math.min(w * 0.7, 180));
+      const rows = [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6];
+      const cols = [0, 1, -1, 2, -2, 3, -3];
+      const seen = new Set();
+      let found = false;
+      for (const r of rows) {
+        for (const c of cols) {
+          const p = clamp(prefX + c * stepX, prefY + r * stepY);
+          const key = Math.round(p.x / 4) + ',' + Math.round(p.y / 4);
+          if (seen.has(key)) continue; seen.add(key);
+          if (!overlap(p.x, p.y)) { x = p.x; y = p.y; found = true; break; }
+        }
+        if (found) break;
+      }
+      if (!found) {
+        // last resort: stack from the top safe row, left to right
+        const cy = minY + 8, n = Math.max(1, Math.floor((maxX - minX) / Math.max(stepX, 1)));
+        for (let i = 0; i <= 20 && overlap(x, y); i++) {
+          const p = clamp(minX + (i % (n + 1)) * stepX, cy + Math.floor(i / (n + 1)) * stepY);
+          x = p.x; y = p.y;
+        }
+      }
+    }
+    this.popLive.push({ x, y, w, h, until: this.time.now + 900 });
+    return { x, y, minY, rise: Math.max(0, Math.min(70, y - minY)) };
+  }
   popNumber(s, k) {
     const hd = this.head(), K = s.kind, fast = K === 'hit' || K === 'batch';
     let x = hd.x + Phaser.Math.Between(-110, 110), y = hd.y - 20 + Phaser.Math.Between(-70, 50);
     if (K === 'burn') { const bi = this.burnI = (this.burnI || 0) + 1; x = hd.x + 30; y = hd.y + 30 - (bi - 1) * 46; }
     if (!fast) { x = hd.x + ((k % 3) - 1) * 70; y = hd.y - 40 - (k % 2) * 50; }
-    x = Phaser.Math.Clamp(x, 70, W - 70); y = Math.max(TOPY_POP, y);
+    const ui = this.worldToUi(x, y); x = ui.x; y = ui.y;
     let label, col, size, neg = false, crit = false, chain = 0, cv = 0;
     if (K === 'hit') {
       const h = s.h; neg = h.v < 0; crit = h.crit; chain = h.chain; cv = h.cv;
@@ -1916,19 +2024,29 @@ class Strike extends Phaser.Scene {
     else { label = t('burnPop', fmt(s.v)) + (s.n > 1 ? ` ×${s.n}` : ''); col = s.crit ? '#ffffff' : '#ff9a4a'; size = s.crit ? 44 : 34; crit = !!s.crit;
       if (s.crit && !this.meltShown) { this.meltShown = true; this.comboPop(t('comboN').melt + '! ' + comboFx('melt', this.res.S.melt, this.res.S), '#ff9a6a', 0xff7a3a); } }
     this.logAdd(K, s, label, col, crit, chain, cv, neg);
+    if (K === 'hit' && s.pop === false) {   // log every hit; only notable ones get a float + VFX
+      const now = this.time.now;
+      if (now - this.lastTick > 90) { synth(this, 'hit', this.hitIdx || 0); this.lastTick = now; }
+      return;
+    }
     this.elemFx(s, crit, chain);
     if (neg) window.DC.drainPopped = (window.DC.drainPopped || 0) + 1;
     const critNum = crit && (K === 'hit' || K === 'batch');
-    const fl = txt(this, x, y, label, size, col, { strokeThickness: Math.max(5, size / 6) + (critNum ? 3 : 0), stroke: critNum ? '#c8102a' : '#140812', maxW: W - 20 }).setDepth(critNum ? 45 : 44);
-    fl.x = Phaser.Math.Clamp(fl.x, Math.min(W / 2, fl.width / 2 + 6), Math.max(W / 2, W - 6 - fl.width / 2));
+    const fl = hudAdd(this, txt(this, x, y, label, size, col, { strokeThickness: Math.max(5, size / 6) + (critNum ? 3 : 0), stroke: critNum ? '#c8102a' : '#140812', maxW: W - 20 }).setDepth(critNum ? 45 : 44));
+    const peak = critNum ? 1.6 : 1.3, boxW = Math.min(W - 16, fl.width * peak + 8), boxH = fl.height * peak + 8;
+    const slot = this.popPlace(fl.x, fl.y, boxW, boxH);
+    fl.x = slot.x; fl.y = slot.y;
+    const rise = Math.min(K === 'burn' ? 40 : 70, slot.rise);
+    this.popLive[this.popLive.length - 1].until = this.time.now + (fast ? 200 : 260) + (fast ? Math.max(380, Math.min(700, 2600 / Math.max(1, this.res.hits.length) * 4)) : 700);
     // POP: scale up past full size, then settle (crits overshoot more)
     fl.setScale(0.25);
-    this.tweens.add({ targets: fl, scale: critNum ? 1.6 : 1.3, duration: fast ? 70 : 100, ease: 'Quad.out', onComplete: () => { if (fl.active) this.tweens.add({ targets: fl, scale: 1, duration: 140, ease: 'Back.out' }); } });
+    this.tweens.add({ targets: fl, scale: peak, duration: fast ? 70 : 100, ease: 'Quad.out', onComplete: () => { if (fl.active) this.tweens.add({ targets: fl, scale: 1, duration: 140, ease: 'Back.out' }); } });
     if (critNum) { fl.setAngle(Phaser.Math.Between(-8, 8)); window.DC.critPopped = (window.DC.critPopped || 0) + 1; }
     const life = fast ? Math.max(380, Math.min(700, 2600 / Math.max(1, this.res.hits.length) * 4)) : 700;
-    this.tweens.add({ targets: fl, y: y - (K === 'burn' ? 40 : 70), alpha: { from: 1, to: 0 }, delay: fast ? 200 : 260, duration: life, ease: 'Quad.in', onComplete: () => fl.destroy() });
-    if (crit && K === 'hit') { const ct = txt(this, Phaser.Math.Clamp(x, 60, W - 60), y - size * 0.75, t('critHit'), 18, '#fff2a0', { strokeThickness: 4 }).setDepth(44); this.tweens.add({ targets: ct, alpha: 0, y: ct.y - 50, delay: 260, duration: life, onComplete: () => ct.destroy() }); }
-    if (chain && K === 'hit' && cv) { const cl = txt(this, 0, y + 30, `${t('chainHit', chain)} +${fmt(cv)}`, 18, '#ffe866', { strokeThickness: 5, maxW: W - 20 }); cl.x = Phaser.Math.Clamp(x + 60, cl.width / 2 + 6, W - 6 - cl.width / 2); (cl).setDepth(44); this.tweens.add({ targets: cl, alpha: 0, y: cl.y - 40, delay: 300, duration: life, onComplete: () => cl.destroy() }); }
+    this.tweens.add({ targets: fl, y: slot.y - rise, alpha: { from: 1, to: 0 }, delay: fast ? 200 : 260, duration: life, ease: 'Quad.in', onComplete: () => fl.destroy() });
+    window.DC.pops = (window.DC.pops || []).concat({ label, x: slot.x, y: slot.y, endY: slot.y - rise, w: boxW, h: boxH, rise, k: K });
+    if (crit && K === 'hit') { const ct = hudAdd(this, txt(this, Phaser.Math.Clamp(slot.x, 60, W - 60), Math.max(222 + 10, slot.y - size * 0.75), t('critHit'), 18, '#fff2a0', { strokeThickness: 4 }).setDepth(44)); this.tweens.add({ targets: ct, alpha: 0, y: Math.max(222, ct.y - Math.min(50, ct.y - 230)), delay: 260, duration: life, onComplete: () => ct.destroy() }); }
+    if (chain && K === 'hit' && cv) { const cl = hudAdd(this, txt(this, 0, Math.min(LOG_Y - 20, slot.y + 30), `${t('chainHit', chain)} +${fmt(cv)}`, 18, '#ffe866', { strokeThickness: 5, maxW: W - 20 }).setDepth(44)); cl.x = Phaser.Math.Clamp(slot.x + 60, cl.width / 2 + 6, W - 6 - cl.width / 2); this.tweens.add({ targets: cl, alpha: 0, y: Math.max(222, cl.y - 40), delay: 300, duration: life, onComplete: () => cl.destroy() }); }
     // the boss flinches with every number (light on fast volleys)
     if (neg) this.boss.setTint(0xc090ff); else this.boss.setTintFill(0xffffff);   // white hit flash on the boss
     this.time.delayedCall(neg ? 60 : crit ? 70 : 45, () => this.untint());
@@ -1943,48 +2061,149 @@ class Strike extends Phaser.Scene {
     else if (neg || K === 'seal' || K === 'weak') sfx(this, 'curse', 0.35);
     else if (now - this.lastTick > 60) { if (K === 'vuln') sfx(this, 'banner', 0.45); else synth(this, 'hit', hi); this.lastTick = now; }
   }
-  // HIT LOG (bottom, over the hidden gear bar): one row per hit = icon + who + damage (+CRIT / ECHO / chain), the newest
-  // row slides in at the bottom and older rows scroll up, in step with the volley; the running total sits underneath
+  // HIT LOG (bottom, over the hidden gear bar): one virtualized row per hit = icon + weapon name + damage
+  // (+CRIT / ECHO / chain). Auto-follows the newest row during the volley; the player can drag / swipe / wheel
+  // through every row (pausing follow) and keep scrolling until they continue. A scroll gesture never skips.
   logInit() {
     (this.barObjs || []).forEach((o) => o.setVisible(false));
-    const D = 55, y0 = LOG_Y, add = (o) => { this.logObjs.push(hudAdd(this, o).setDepth(D)); return o; };
-    this.logObjs = []; this.logRows = []; window.DC.hitLog = [];
-    // v8.2: no panel fill, the log floats over the scene; rows carry a thick stroke + drop shadow instead
+    const D = 66, y0 = LOG_Y, add = (o) => { this.logObjs.push(hudAdd(this, o).setDepth(D)); return o; };
+    this.logObjs = []; this.logPool = []; this.logEntries = []; window.DC.hitLog = [];
+    this.logScroll = 0; this.logMax = 0; this.logFollow = true; this.logDrag = null; this.logHeld = false;
+    window.DC.logScroll = 0; window.DC.logFollow = true; window.DC.logScrolled = 0;
     const sh = (o) => o.setShadow(2, 2, '#000000', 3, true, true);
     const c = this.logC = add(this.add.container(0, 0));
     const mg = this.make.graphics({ add: false }); mg.fillStyle(0xffffff).fillRect(8, y0 + 6, W - 16, LOG_N * LOG_RH); c.setMask(mg.createGeometryMask()); this.logMask = mg;
     add(this.add.rectangle(W / 2, y0 + 10 + LOG_N * LOG_RH, W - 28, 2, 0xffcf40, 0.5));
     sh(add(txt(this, 20, H - 26, t('logTotal'), 18, '#ffe8a0', { strokeThickness: 5 }).setOrigin(0, 0.5)));
     this.logV = sh(add(txt(this, W - 20, H - 26, '', 22, '#ffd36a', { strokeThickness: 6 }).setOrigin(1, 0.5))).setAlpha(0);   // hidden until the first damage (no '0')
+    const hit = this.logHit = add(this.add.rectangle(W / 2, y0 + 6 + (LOG_N * LOG_RH) / 2, W - 8, LOG_N * LOG_RH + 16, 0xffffff, 0.001).setInteractive());
+    hit.setData('hitLog', true).setDepth(D + 1);
+    hit.on('pointerdown', (p) => { this.logDrag = { y: p.y, s0: this.logScroll || 0, moved: false }; this.logHeld = true; this.logFollow = false; window.DC.logHeld = true; window.DC.logFollow = false; });
+    const sc = this;
+    window.DC.logState = () => ({ n: (sc.logEntries || []).length, scroll: sc.logScroll || 0, max: sc.logMax || 0, follow: !!sc.logFollow, live: (sc.logPool || []).length, view: LOG_N, rh: LOG_RH });
+    window.DC.logScrollTo = (v) => sc.logSetScroll(v);
+  }
+  logRowPool() {
+    const c = this.add.container(0, 0), im = this.add.image(22, 0, 'el_Fire').setScale(1.2);
+    const nm = txt(this, 40, 0, '', 16, '#f4ead8', { strokeThickness: 5 }).setOrigin(0, 0.5);
+    const val = txt(this, W - 18, 0, '', 17, '#ffffff', { strokeThickness: 5 }).setOrigin(1, 0.5);
+    const mk = []; for (let i = 0; i < 4; i++) mk.push(txt(this, 0, 0, '', 16, '#fff2a0', { strokeThickness: 5 }).setOrigin(1, 0.5));
+    [im, nm, val, ...mk].forEach((o) => { hudAdd(this, o); c.add(o); if (o.type === 'Text') o.setShadow(2, 2, '#000000', 3, true, true); });
+    hudAdd(this, c); this.logC.add(c); c.setVisible(false);
+    const row = { c, im, nm, val, mk }; this.logPool.push(row); return row;
+  }
+  logFillRow(row, e) {
+    const im = row.im, icon = e.icon;
+    if (icon) {
+      im.setVisible(true);
+      if (icon[1] === null) { im.setTexture(icon[0]); im.setScale(1.2); im.setCrop(); }
+      else { im.setTexture(icon[0], icon[1]); im.setScale(icon[0] === 'icons' ? 0.6 : 0.7); if (icon[0] === 'hero_idle') im.setCrop(14, 8, 36, 30); else im.setCrop(); }
+    } else im.setVisible(false);
+    let rx = W - 18;
+    if (e.val) { row.val.setVisible(true).setText(e.val).setColor(e.neg ? '#c890ff' : e.crit ? '#ffffff' : e.col).setStroke(e.crit ? '#c8102a' : '#140812', 5); row.val.x = rx; rx -= row.val.width + 8; }
+    else row.val.setVisible(false);
+    const marks = e.marks || [];
+    row.mk.forEach((mt, i) => {
+      const m = marks[marks.length - 1 - i];
+      if (!m) { mt.setVisible(false); return; }
+      mt.setVisible(true).setText(m[0]).setColor(m[1]); mt.x = rx; rx -= mt.width + 6;
+    });
+    const room = Math.max(60, rx - 46);
+    row.nm.setVisible(true).setColor(e.val ? '#f4ead8' : e.col).setText(e.name); clipText(row.nm, room);
+  }
+  logSyncMax() {
+    const max = Math.max(0, (this.logEntries || []).length * LOG_RH - LOG_N * LOG_RH);
+    this.logMax = max; window.DC.logMax = max;
+    if (this.logFollow && !this.logHeld) this.logScroll = max;
+    window.DC.logScroll = this.logScroll || 0;
+    return max;
+  }
+  logKickRender(immediate) {
+    if (immediate) {
+      if (this._logRaf) { try { this._logRaf.remove(false); } catch (e) {} this._logRaf = null; }
+      this.logDirty = false; this.logRender(); return;
+    }
+    this.logDirty = true;
+    if (this._logRaf) return;
+    this._logRaf = this.time.delayedCall(32, () => { this._logRaf = null; if (this.logDirty) { this.logDirty = false; this.logRender(); } });
+  }
+  logSetScroll(v) {
+    if (!this.logEntries) return;
+    const max = this.logSyncMax();
+    this.logScroll = Phaser.Math.Clamp(v, 0, max); window.DC.logScroll = this.logScroll;
+    this.logKickRender(true);
+  }
+  logRender() {
+    if (!this.logC || !this.logEntries) return;
+    const y0 = LOG_Y + 6, RH = LOG_RH, scroll = this.logScroll || 0;
+    const start = Math.max(0, Math.floor(scroll / RH) - 1);
+    const end = Math.min(this.logEntries.length, start + LOG_N + 3);
+    const need = Math.max(0, end - start);
+    while ((this.logPool || []).length < need) this.logRowPool();
+    const used = new Set();
+    for (let i = start; i < end; i++) {
+      const row = this.logPool[i - start]; used.add(row);
+      row.c.setVisible(true).setY(y0 + RH / 2 + i * RH - scroll);
+      this.logFillRow(row, this.logEntries[i]);
+    }
+    (this.logPool || []).forEach((row) => { if (!used.has(row)) row.c.setVisible(false); });
+    window.DC.logLive = (this.logPool || []).length;
+  }
+  logEndDrag() {
+    const d = this.logDrag; if (!d) { this.logHeld = false; window.DC.logHeld = false; return; }
+    this.logDrag = null; this.logHeld = false; window.DC.logHeld = false;
+    this.logUpAt = this.time.now; this.logWasMoved = !!d.moved;
+    const max = this.logMax || 0;
+    if ((this.logScroll || 0) >= max - LOG_RH * 1.2) { this.logFollow = true; this.logSetScroll(max); }
+    window.DC.logFollow = this.logFollow;
+    if (d.moved) window.DC.logScrolled = (window.DC.logScrolled || 0) + 1;
+  }
+  logOnWheel(p, dy) {
+    if (!this.logC || !this.logEntries || !dy) return;
+    if (p && p.y < LOG_Y - 12) return;
+    this.logFollow = false; this.logWheelAt = this.time.now; this.logWasMoved = true;
+    this.logSetScroll((this.logScroll || 0) + dy * 0.5);
+    const max = this.logMax || 0;
+    if ((this.logScroll || 0) >= max - LOG_RH * 1.2) this.logFollow = true;
+    window.DC.logFollow = this.logFollow; window.DC.logScrolled = (window.DC.logScrolled || 0) + 1;
+  }
+  logBlocks(p, over) {
+    if (!this.logC || !this.logEntries) return false;
+    if (this.logHeld || this.logDrag) return true;
+    if (this.logWasMoved && this.time.now - (this.logUpAt || 0) < 400) return true;
+    if (this.time.now - (this.logWheelAt || 0) < 280) return true;
+    if (over && over.some((o) => o.getData && o.getData('hitLog'))) return true;
+    if (p && p.y >= LOG_Y - 8) return true;
+    return false;
+  }
+  armContinue() {
+    this.input.once('pointerdown', (p, over) => { if (this.logBlocks(p, over)) { this.armContinue(); return; } this.toNextStage(); });
+  }
+  tryContinue() {
+    if (this.leaving) return;
+    if (this.logHeld || this.logDrag) { this.time.delayedCall(400, () => this.tryContinue()); return; }
+    this.toNextStage();
   }
   logAdd(K, s, label, col, crit, chain, cv, neg) {
-    if (!this.logC) return;
-    const c = this.logC, y0 = LOG_Y + 6, RH = LOG_RH, put = (o) => { hudAdd(this, o); c.add(o); if (o.type === 'Text') o.setShadow(2, 2, '#000000', 3, true, true); return o; };
+    if (!this.logC || !this.logEntries) return;
     let icon = null, name = label, val = '', marks = [];
     if (K === 'hit') {
       const h = s.h; icon = h.it ? ['icons', h.it.frame] : ['hero_idle', 0];
       name = h.it ? h.it.name : t('logHero'); val = neg ? '−' + fmt(-h.v) : fmt(h.v);
       if (h.echo) marks.push([t('echoTag'), '#9ae8ff']); if (crit) marks.push([t('logCrit'), '#fff2a0']); if (chain && cv) marks.push(['+' + fmt(cv), '#ffe866']); if (h.sc && cv) marks.push([t('scTag'), '#9ae8ff']);
-    } else if (K === 'batch') {
-      const it = (s.hs.find((h) => h.it) || {}).it; icon = it ? ['icons', it.frame] : ['hero_idle', 0];
-      name = t('logBatch', s.hs.length); val = label.replace(/ ×\d+$/, ''); if (crit) marks.push([t('logCrit'), '#fff2a0']); if (s.hs.some((h) => h.sc && h.cv)) marks.push([t('scTag'), '#9ae8ff']);
     } else { icon = ['el_' + (K === 'vuln' ? 'Ice' : K === 'seal' ? s.el : 'Fire'), null]; if (K === 'burn' && s.crit) marks.push([s.nc > 1 ? t('logCrit') + ' ×' + s.nc : t('logCrit'), '#fff2a0']); }
-    const n = this.logRows.length, yy = y0 + Math.min(n, LOG_N) * RH + RH / 2;
-    const row = [];
-    if (icon) { const im = put(icon[1] === null ? this.add.image(22, yy, icon[0]).setScale(1.2) : this.add.image(22, yy, icon[0], icon[1]).setScale(icon[0] === 'icons' ? 0.6 : 0.7)); if (icon[0] === 'hero_idle') im.setCrop(14, 8, 36, 30); row.push(im); }
-    let rx = W - 18;
-    if (val) { const v = put(txt(this, rx, yy, val, 17, neg ? '#c890ff' : crit ? '#ffffff' : col, { strokeThickness: 5, stroke: crit ? '#c8102a' : '#140812' }).setOrigin(1, 0.5)); row.push(v); rx -= v.width + 8; }
-    marks.slice().reverse().forEach(([m, mc]) => { const mt = put(txt(this, rx, yy, m, 16, mc, { strokeThickness: 5 }).setOrigin(1, 0.5)); row.push(mt); rx -= mt.width + 6; });
-    const nm = put(txt(this, 40, yy, name, 16, val ? '#f4ead8' : col, { strokeThickness: 5 }).setOrigin(0, 0.5)); clipText(nm, Math.max(60, rx - 46)); row.push(nm);
-    this.logRows.push(row); window.DC.hitLog.push([name, val, marks.map((m) => m[0]).join(' ')]);
-    const fast = Math.min(110, (this.res.hits.length > 8 ? 70 : 110));
-    row.forEach((o) => { o.alpha = 0; o.x += 18; this.tweens.add({ targets: o, alpha: 1, x: o.x - 18, duration: fast }); });
-    if (n >= LOG_N) {   // full: everything scrolls up one row, rows that leave the top are dropped
-      this.logRows.forEach((r) => r.forEach((o) => this.tweens.add({ targets: o, y: o.y - RH, duration: fast, ease: 'Quad.out' })));
-      const gone = this.logRows.splice(0, this.logRows.length - LOG_N - 1); gone.forEach((r) => r.forEach((o) => o.destroy()));
-    }
+    this.logEntries.push({ icon, name, val, marks, col, crit, neg });
+    window.DC.hitLog.push([name, val, marks.map((m) => m[0]).join(' ')]);
+    this.logSyncMax(); this.logKickRender(false);
   }
-  logEnd() { const o = this.logObjs || []; this.logObjs = []; this.logC = null; this.tweens.add({ targets: o, alpha: 0, duration: 250, onComplete: () => o.forEach((q) => q.destroy()) }); }
+  logEnd() {
+    if (this._logRaf) { try { this._logRaf.remove(false); } catch (e) {} this._logRaf = null; }
+    if (this.logHit) { try { this.logHit.disableInteractive(); } catch (e) {} this.logHit = null; }
+    const o = this.logObjs || []; this.logObjs = []; this.logC = null; this.logEntries = null; this.logPool = null; this.logDrag = null;
+    window.DC.logState = null; window.DC.logScrollTo = null;
+    this.tweens.add({ targets: o, alpha: 0, duration: 250, onComplete: () => o.forEach((q) => { if (q && q.destroy) q.destroy(); }) });
+    if (this.logMask) { try { this.logMask.destroy(); } catch (e) {} this.logMask = null; }
+  }
   // dual-element combo callout (MELT / SUPERCONDUCT / OVERLOAD): a banner under the hit counter
   comboPop(label, css, col) {
     const y = 404 + (this.comboN || 0) * 40; this.comboN = (this.comboN || 0) + 1;
@@ -2166,13 +2385,13 @@ class Strike extends Phaser.Scene {
   stageClear() {
     window.DC.phase = 'stage-clear';
     this.tweens.add({ targets: [this.dmg, this.br, this.okT, this.rays, this.dmgLabel, this.hitsT].filter(Boolean), alpha: 0, duration: 250 });
-    this.logEnd();
     const N = (n) => Math.max(4, Math.round(n * this.lite()));
     sfx(this, 'banner', 0.8); sfx(this, 'rare', 0.5);
     this.tweens.add({ targets: this.hero, x: W / 2 - 40, duration: 400 });
     const big = isBig(this.s);
     const ban = txt(this, W / 2, 300, big ? t('milestone', this.s + 1) : t('stageClear', this.s + 1), 44, '#ffd36a', { strokeThickness: 10, stroke: '#4a2400', maxW: W - 24 }).setDepth(60);
     this.statsHidden = false; this.statsLocked = false; this.drawStats();   // the swing is over: the panel is back in its spot
+    if (this.logC) (this.barObjs || []).forEach((o) => o.setVisible(false));   // hit log stays until the player continues
     if (big) milestoneJingle(this);
     try { if (ban.preFX) { ban.preFX.addShine(0.9, 0.35, 4); ban.preFX.addGlow(0xffcf40, 4, 0, false, 0.1, 10); } } catch (e) {}
     popText(this, ban, 1);
@@ -2194,7 +2413,7 @@ class Strike extends Phaser.Scene {
   // OVERKILL BONUS: reward scaled by damage / boss HP, auto-opened, added to the gear
   bonusMoment() {
     const r = this.res, b = bonusDrop(r.total, this.hpMax, Math.random, this.s, r.executed), N = (n) => Math.max(4, Math.round(n * this.lite()));
-    if (!b) { window.DC.bonus = null; window.DC.bonusShown = true; this.time.delayedCall(900, () => this.toNextStage()); return; }
+    if (!b) { window.DC.bonus = null; window.DC.bonusShown = true; this.time.delayedCall(700, () => this.armContinue()); this.time.delayedCall(10000, () => this.tryContinue()); return; }
     const it = nameItem(b.item); it.bonus = b.tier; it.src = 'boss'; this.dropItem = it;
     const R = RARITY[it.rarity], leg = LEG_R[it.rarity], jack = b.tier === 'jackpot';
     window.DC.phase = 'bonus'; window.DC.bonus = { tier: b.tier, type: b.type, name: it.name, rule: ruleText(it), rarity: it.rarity, q: b.q, rare: b.rare, base: b.base, shift: b.shift };
@@ -2257,8 +2476,8 @@ class Strike extends Phaser.Scene {
           window.DC.bonusShown = true;
         });
         // stays up long enough to read; tap to continue sooner
-        this.time.delayedCall(leg ? 3600 : 3000, () => this.toNextStage());
-        this.time.delayedCall(700, () => this.input.once('pointerdown', () => this.toNextStage()));
+        this.time.delayedCall(leg ? 8000 : 7000, () => this.tryContinue());
+        this.time.delayedCall(700, () => this.armContinue());
       } });
     } });
   }
@@ -2288,6 +2507,7 @@ class Strike extends Phaser.Scene {
   }
   toNextStage() {
     if (this.leaving) return; this.leaving = true;
+    this.logEnd();
     if (this.dropItem) { this.fileDrop(() => { this.leaving = false; this.dropItem = null; this.toNextStage(); }); return; }
     if (!this.cursesTicked) {   // v8.3: every cleared stage -1 on each cursed item; at 0 it crumbles away
       this.cursesTicked = true; const gone = tickCurses(this.G);
@@ -2301,7 +2521,7 @@ class Strike extends Phaser.Scene {
   }
   loseSeq() {
     // the boss lunges and EATS the hero
-    window.DC.phase = 'eating'; this.logEnd();
+    window.DC.phase = 'eating';
     this.tweens.add({ targets: [this.dmg, this.br, this.okT, this.rays, this.dmgLabel, this.hitsT].filter(Boolean), alpha: 0, duration: 250 });
     const cam = this.cameras.main, c = this.cfg, s0 = c.scale, b = this.boss;
     this.record(this.res, true);
