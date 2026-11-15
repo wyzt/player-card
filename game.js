@@ -1259,16 +1259,17 @@ class Title extends Phaser.Scene {
     shadow(this, W / 2 + 70, 700, 220); shadow(this, 70, 700, 70);
     this.add.sprite(W / 2 + 40, 700, 'dragon_idle').setScale(2.4).setOrigin(0.5, 1).play('dragon-idle');
     heroGlow(this.add.sprite(70, 700, 'hero_idle').setScale(2.6).setOrigin(0.5, 1).play('hero-idle'));
-    // title + the rules (wrapped, never shrunk below readable size)
+    // v9.2: four short punchy hooks (details live in tooltips). Never shrink below readable size.
     const t0 = txt(this, W / 2, 128, t('title'), 54, '#ffd36a', { strokeThickness: 10, maxW: W - 40 });
-    const r1 = txtW(this, W / 2, 0, t('sub1'), 22, '#ffffff', W - 70), r2 = txtW(this, W / 2, 0, t('sub2'), 18, '#ff9a7a', W - 70);
-    const r3 = txtW(this, W / 2, 0, t('sub3'), 18, '#ffe27a', W - 70);   // how a strike works: hero first, then every weapon once
-    const r4 = txtW(this, W / 2, 0, t('sub4'), 18, '#9affd8', W - 70);   // overkill rewards: bonus chest at x3+, rarer with more, accessories -> permanent
-    const r5 = txtW(this, W / 2, 0, t('sub5'), 18, '#e0b0ff', W - 70);   // v8.3: dark chests / curses last 2-5 stages
-    r1.y = 172; r3.y = r1.y + r1.height + 8; r4.y = r3.y + r3.height + 8; r5.y = r4.y + r4.height + 8; r2.y = r5.y + r5.height + 8;
-    const bot = r2.y + r2.height + 16; const pg = panel(this, 16, 82, W - 32, bot - 82); pg.setDepth(-1); [t0, r1, r2, r3, r4, r5].forEach((o) => o.setDepth(1));
+    const r1 = txtW(this, W / 2, 0, t('sub1'), 22, '#ffffff', W - 70);
+    const r3 = txtW(this, W / 2, 0, t('sub3'), 22, '#ffe27a', W - 70);   // one swing, every weapon hits
+    const r4 = txtW(this, W / 2, 0, t('sub4'), 22, '#9affd8', W - 70);   // more overkill, better loot
+    const r2 = txtW(this, W / 2, 0, t('sub2'), 22, '#ff9a7a', W - 70);   // endless bosses, exploding numbers
+    r1.y = 178; r3.y = r1.y + r1.height + 14; r4.y = r3.y + r3.height + 14; r2.y = r4.y + r4.height + 14;
+    const bot = r2.y + r2.height + 16; const pg = panel(this, 16, 82, W - 32, bot - 82); pg.setDepth(-1); [t0, r1, r2, r3, r4].forEach((o) => o.setDepth(1));
     window.DC.titleOk = r4.text; window.DC.titleBot = bot;
-    window.DC.titleRules = r3.text;
+    window.DC.titleRules = [r1, r3, r4, r2].map((o) => o.text).join('\n');
+    window.DC.titleLines = [r1, r3, r4, r2].reduce((n, o) => n + o.text.split('\n').length, 0);
     const best = loadBest();
     if (best.stage) txt(this, W / 2, bot + 26, t('titleBest', best.stage, fmt(best.hit)), 18, '#b8f0a0', { strokeThickness: 5, maxW: W - 30 });
     const tap = txt(this, W / 2, 770, t('tapStart'), 30, '#fff2c0', { maxW: W - 40 });
