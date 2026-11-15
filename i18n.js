@@ -1086,6 +1086,29 @@ es: {
 /*</es>*/
 };
 for (const l of LANGS) Object.assign(I18N[l], I18N19[l]);
+
+// v9.3: early-hit summary row when the log keeps only the most recent ~400 named hits
+const I18N20 = {
+/*<en>*/
+en: { logEarly: (n) => `First ${n} hits` },
+/*</en>*/
+/*<zh>*/
+zh: { logEarly: (n) => `前 ${n} 刀` },
+/*</zh>*/
+/*<ja>*/
+ja: { logEarly: (n) => `最初の${n}撃` },
+/*</ja>*/
+/*<ko>*/
+ko: { logEarly: (n) => `처음 ${n}타` },
+/*</ko>*/
+/*<pt>*/
+pt: { logEarly: (n) => `Primeiros ${n} golpes` },
+/*</pt>*/
+/*<es>*/
+es: { logEarly: (n) => `Primeros ${n} golpes` },
+/*</es>*/
+};
+for (const l of LANGS) Object.assign(I18N[l], I18N20[l]);
 const NOUN_KEYS = ['Sword', 'Dagger', 'Mace', 'Bow', 'Axe', 'Blade', 'Staff', 'Spear', 'Armor', 'Boots', 'Helm', 'Amulet', 'Ring', 'Pendant', 'Medal', 'Talisman', 'Relic', 'Idol', 'Grimoire', 'Shard'];
 const CJK_FONT = { zh: 'FusionZH', ja: 'FusionJA', ko: 'FusionKO' };
 function detectLang() {

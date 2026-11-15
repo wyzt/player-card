@@ -527,7 +527,7 @@ let FONT = fontFor(LANG);
 const BOSS_Y = 138, BAR_Y = 798, HPX = 22, HPW = W - 44, PLAY_R = W;
 const LAVA_GROUND = 700;   // floor line on the strike / intro / title screens
 const PICK_GROUND = 790;   // hoard floor on the pick screen (hero + waiting boss stand on it)
-const HERO_X = 86, TOPY_POP = 250, LOG_Y = 704, LOG_N = 5, LOG_RH = 23;
+const HERO_X = 86, TOPY_POP = 250, LOG_Y = 704, LOG_N = 5, LOG_RH = 23, LOG_KEEP = 400;
 const CHEST_X = [76, 216, 356], CHEST_BASE = 500, CHEST_SC = 4, CARD_Y = 668;
 window.DC = { phase: 'boot', round: 0 };
 // test hook: DC.jump(20) starts stage 21 with gear built by 20 stages of picks
@@ -2063,6 +2063,8 @@ class Strike extends Phaser.Scene {
   // HIT LOG (bottom, over the hidden gear bar): one virtualized row per hit = icon + weapon name + damage
   // (+CRIT / ECHO / chain). Auto-follows the newest row during the volley; the player can drag / swipe / wheel
   // through every row (pausing follow) and keep scrolling until they continue. A scroll gesture never skips.
+  // When more than LOG_KEEP hits land, the earliest ones collapse into a single summary row at the top
+  // (after any curse / frostbite notes) so the most recent ~400 stay named; the running total is unchanged.
   logInit() {
     (this.barObjs || []).forEach((o) => o.setVisible(false));
     const D = 66, y0 = LOG_Y, add = (o) => { this.logObjs.push(hudAdd(this, o).setDepth(D)); return o; };
@@ -2079,8 +2081,14 @@ class Strike extends Phaser.Scene {
     hit.setData('hitLog', true).setDepth(D + 1);
     hit.on('pointerdown', (p) => { this.logDrag = { y: p.y, s0: this.logScroll || 0, moved: false }; this.logHeld = true; this.logFollow = false; window.DC.logHeld = true; window.DC.logFollow = false; });
     const sc = this;
-    window.DC.logState = () => ({ n: (sc.logEntries || []).length, scroll: sc.logScroll || 0, max: sc.logMax || 0, follow: !!sc.logFollow, live: (sc.logPool || []).length, view: LOG_N, rh: LOG_RH });
-    window.DC.logScrollTo = (v) => sc.logSetScroll(v);
+    window.DC.logEarly = null;
+    window.DC.logState = () => {
+      const es = sc.logEntries || [];
+      const early = es.find((e) => e.kind === 'early');
+      return { n: es.length, scroll: sc.logScroll || 0, max: sc.logMax || 0, follow: !!sc.logFollow, live: (sc.logPool || []).length, view: LOG_N, rh: LOG_RH,
+        hits: es.filter((e) => e.kind === 'hit').length, early: early ? { n: early.n, amt: early.amt, name: early.name, val: early.val } : null };
+    };
+    window.DC.logScrollTo = (v) => { sc.logFollow = false; window.DC.logFollow = false; sc.logSetScroll(v); };
   }
   logRowPool() {
     const c = this.add.container(0, 0), im = this.add.image(22, 0, 'el_Fire').setScale(1.2);
@@ -2107,8 +2115,9 @@ class Strike extends Phaser.Scene {
       if (!m) { mt.setVisible(false); return; }
       mt.setVisible(true).setText(m[0]).setColor(m[1]); mt.x = rx; rx -= mt.width + 6;
     });
-    const room = Math.max(60, rx - 46);
-    row.nm.setVisible(true).setColor(e.val ? '#f4ead8' : e.col).setText(e.name); clipText(row.nm, room);
+    const room = Math.max(60, rx - (icon ? 46 : 22));
+    row.nm.setVisible(true).setColor(e.kind === 'early' ? '#ffe8a0' : (e.val ? '#f4ead8' : e.col)).setText(e.name);
+    row.nm.x = icon ? 40 : 16; clipText(row.nm, room);
   }
   logSyncMax() {
     const max = Math.max(0, (this.logEntries || []).length * LOG_RH - LOG_N * LOG_RH);
@@ -2185,15 +2194,45 @@ class Strike extends Phaser.Scene {
   }
   logAdd(K, s, label, col, crit, chain, cv, neg) {
     if (!this.logC || !this.logEntries) return;
-    let icon = null, name = label, val = '', marks = [];
+    let icon = null, name = label, val = '', marks = [], amt = 0;
     if (K === 'hit') {
       const h = s.h; icon = h.it ? ['icons', h.it.frame] : ['hero_idle', 0];
       name = h.it ? h.it.name : t('logHero'); val = neg ? '−' + fmt(-h.v) : fmt(h.v);
+      amt = (h.v || 0) + (h.cv || 0);
       if (h.echo) marks.push([t('echoTag'), '#9ae8ff']); if (crit) marks.push([t('logCrit'), '#fff2a0']); if (chain && cv) marks.push(['+' + fmt(cv), '#ffe866']); if (h.sc && cv) marks.push([t('scTag'), '#9ae8ff']);
     } else { icon = ['el_' + (K === 'vuln' ? 'Ice' : K === 'seal' ? s.el : 'Fire'), null]; if (K === 'burn' && s.crit) marks.push([s.nc > 1 ? t('logCrit') + ' ×' + s.nc : t('logCrit'), '#fff2a0']); }
-    this.logEntries.push({ icon, name, val, marks, col, crit, neg });
+    this.logEntries.push({ kind: K, icon, name, val, marks, col, crit, neg, amt });
     window.DC.hitLog.push([name, val, marks.map((m) => m[0]).join(' ')]);
+    if (K === 'hit') this.logFoldEarly();
     this.logSyncMax(); this.logKickRender(false);
+  }
+  // keep the most recent LOG_KEEP hits as named rows; older hits fold into one summary at the top
+  logFoldEarly() {
+    const es = this.logEntries, keep = LOG_KEEP;
+    const hitAt = []; let earlyAt = -1;
+    for (let i = 0; i < es.length; i++) {
+      if (es[i].kind === 'early') earlyAt = i;
+      else if (es[i].kind === 'hit') hitAt.push(i);
+    }
+    const extra = hitAt.length - keep;
+    if (extra <= 0) return;
+    let n = earlyAt >= 0 ? (es[earlyAt].n || 0) : 0, sum = earlyAt >= 0 ? (es[earlyAt].amt || 0) : 0;
+    for (let i = extra - 1; i >= 0; i--) {
+      const at = hitAt[i], e = es[at];
+      n += 1; sum = capN(sum + (e.amt || 0));
+      es.splice(at, 1); window.DC.hitLog.splice(at, 1);
+    }
+    const name = t('logEarly', n), val = fmt(sum);
+    const row = { kind: 'early', icon: null, name, val, marks: [[t('logTotal'), '#ffe8a0']], col: '#ffe8a0', crit: false, neg: sum < 0, amt: sum, n };
+    const rec = [name, val, t('logTotal')];
+    earlyAt = es.findIndex((e) => e.kind === 'early');
+    if (earlyAt >= 0) { es[earlyAt] = row; window.DC.hitLog[earlyAt] = rec; }
+    else {
+      let at = 0;
+      while (at < es.length && es[at].kind !== 'hit' && es[at].kind !== 'early') at++;
+      es.splice(at, 0, row); window.DC.hitLog.splice(at, 0, rec);
+    }
+    window.DC.logEarly = { n, amt: sum, val, name };
   }
   logEnd() {
     if (this._logRaf) { try { this._logRaf.remove(false); } catch (e) {} this._logRaf = null; }
