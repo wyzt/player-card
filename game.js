@@ -1289,16 +1289,18 @@ class Title extends Phaser.Scene {
     shadow(this, W / 2 + 70, 700, 220); shadow(this, 70, 700, 70);
     this.add.sprite(W / 2 + 40, 700, 'dragon_idle').setScale(2.4).setOrigin(0.5, 1).play('dragon-idle');
     heroGlow(this.add.sprite(70, 700, 'hero_idle').setScale(2.6).setOrigin(0.5, 1).play('hero-idle'));
-    // v9.3: three short punchy hooks (the old endless-bosses / exploding-numbers line is gone). Details live in tooltips.
-    const t0 = txt(this, W / 2, 128, t('title'), 54, '#ffd36a', { strokeThickness: 10, maxW: W - 40 });
-    const r1 = txtW(this, W / 2, 0, t('sub1'), 22, '#ffffff', W - 70);
-    const r3 = txtW(this, W / 2, 0, t('sub3'), 22, '#ffe27a', W - 70);   // one swing, every weapon hits
+    // v9.3: a two-line couplet under the title (swing + overkill), spaced so the pair feels designed. Details live in tooltips.
+    const t0 = txt(this, W / 2, 136, t('title'), 54, '#ffd36a', { strokeThickness: 10, maxW: W - 40 });
+    const r3 = txtW(this, W / 2, 0, t('sub3'), 22, '#ffe27a', W - 70);   // one swing, the god-blades answer
     const r4 = txtW(this, W / 2, 0, t('sub4'), 22, '#9affd8', W - 70);   // more overkill, better loot
-    r1.y = 178; r3.y = r1.y + r1.height + 14; r4.y = r3.y + r3.height + 14;
-    const bot = r4.y + r4.height + 16; const pg = panel(this, 16, 82, W - 32, bot - 82); pg.setDepth(-1); [t0, r1, r3, r4].forEach((o) => o.setDepth(1));
+    r3.y = t0.y + t0.height / 2 + 48; r4.y = r3.y + r3.height + 22;
+    const bot = r4.y + r4.height + 22, top = 86;
+    const pg = panel(this, 16, top, W - 32, bot - top); pg.setDepth(-1);
+    const rule = this.add.rectangle(W / 2, (t0.y + t0.height / 2 + r3.y) / 2, 112, 2, 0xffcf40, 0.55);
+    [t0, r3, r4, rule].forEach((o) => o.setDepth(1));
     window.DC.titleOk = r4.text; window.DC.titleBot = bot;
-    window.DC.titleRules = [r1, r3, r4].map((o) => o.text).join('\n');
-    window.DC.titleLines = [r1, r3, r4].reduce((n, o) => n + o.text.split('\n').length, 0);
+    window.DC.titleRules = [r3, r4].map((o) => o.text).join('\n');
+    window.DC.titleLines = [r3, r4].reduce((n, o) => n + o.text.split('\n').length, 0);
     const best = loadBest();
     if (best.stage) txt(this, W / 2, bot + 26, t('titleBest', best.stage, fmt(best.hit)), 18, '#b8f0a0', { strokeThickness: 5, maxW: W - 30 });
     const tap = txt(this, W / 2, 770, t('tapStart'), 30, '#fff2c0', { maxW: W - 40 });
@@ -2197,7 +2199,7 @@ class Strike extends Phaser.Scene {
     let icon = null, name = label, val = '', marks = [], amt = 0;
     if (K === 'hit') {
       const h = s.h; icon = h.it ? ['icons', h.it.frame] : ['hero_idle', 0];
-      name = h.it ? h.it.name : t('logHero'); val = neg ? '−' + fmt(-h.v) : fmt(h.v);
+      name = h.it ? h.it.name : t('logBase'); val = neg ? '−' + fmt(-h.v) : fmt(h.v);
       amt = (h.v || 0) + (h.cv || 0);
       if (h.echo) marks.push([t('echoTag'), '#9ae8ff']); if (crit) marks.push([t('logCrit'), '#fff2a0']); if (chain && cv) marks.push(['+' + fmt(cv), '#ffe866']); if (h.sc && cv) marks.push([t('scTag'), '#9ae8ff']);
     } else { icon = ['el_' + (K === 'vuln' ? 'Ice' : K === 'seal' ? s.el : 'Fire'), null]; if (K === 'burn' && s.crit) marks.push([s.nc > 1 ? t('logCrit') + ' ×' + s.nc : t('logCrit'), '#fff2a0']); }

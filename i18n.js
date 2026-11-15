@@ -1040,47 +1040,41 @@ es: {
 };
 for (const l of LANGS) Object.assign(I18N[l], I18N18[l]);
 
-// v9.2 / v9.3: title hooks — short, punchy, 3 lines (the endless-bosses / exploding-numbers line was dropped). Strike / overkill / curse details stay in tooltips.
+// v9.3: title hooks — a two-line couplet (the swing, then overkill). The pick-one / stacks-forever and endless-bosses lines were dropped. Details stay in tooltips.
 const I18N19 = {
 /*<en>*/
 en: {
-  sub1: 'Pick 1 of 3. Stacks forever!',
-  sub3: 'One swing — every weapon hits!',
+  sub3: 'One swing — god-blades answer!',
   sub4: 'More overkill, better loot',
 },
 /*</en>*/
 /*<zh>*/
 zh: {
-  sub1: '三选一开箱，装备无限叠加！',
-  sub3: '一刀下去，所有武器齐砸！',
+  sub3: '挥剑一斩，众神兵随你齐出！',
   sub4: '伤害溢出越多，掉落越好',
 },
 /*</zh>*/
 /*<ja>*/
 ja: {
-  sub1: '宝箱は三択。装備は無限積み！',
-  sub3: '一撃で全武器が同時攻撃！',
+  sub3: '剣を一閃、あらゆる神兵が応える！',
   sub4: 'オーバーキルほど良い戦利品',
 },
 /*</ja>*/
 /*<ko>*/
 ko: {
-  sub1: '3개 중 1개! 장비는 무한 중첩!',
-  sub3: '한 번에, 모든 무기가 함께 내려친다!',
+  sub3: '검 한 휘두름에, 모든 신병이 응한다!',
   sub4: '초과 피해가 클수록 전리품이 더 좋다',
 },
 /*</ko>*/
 /*<pt>*/
 pt: {
-  sub1: 'Escolha 1 de 3. Itens eternos!',
-  sub3: 'Um golpe — todas as armas!',
+  sub3: 'Um golpe, o arsenal sagrado sai!',
   sub4: 'Mais excesso, melhor saque',
 },
 /*</pt>*/
 /*<es>*/
 es: {
-  sub1: 'Elige 1 de 3. ¡Equipo eterno!',
-  sub3: '¡Un golpe, todas las armas!',
+  sub3: '¡Un tajo, hojas sagradas salen!',
   sub4: 'Más exceso, mejor botín',
 },
 /*</es>*/
@@ -1090,22 +1084,22 @@ for (const l of LANGS) Object.assign(I18N[l], I18N19[l]);
 // v9.3: early-hit summary row when the log keeps only the most recent ~400 named hits
 const I18N20 = {
 /*<en>*/
-en: { logEarly: (n) => `First ${n} hits` },
+en: { logEarly: (n) => `First ${n} hits`, logBase: 'Base Attack' },
 /*</en>*/
 /*<zh>*/
-zh: { logEarly: (n) => `前 ${n} 刀` },
+zh: { logEarly: (n) => `前 ${n} 刀`, logBase: '基础攻击' },
 /*</zh>*/
 /*<ja>*/
-ja: { logEarly: (n) => `最初の${n}撃` },
+ja: { logEarly: (n) => `最初の${n}撃`, logBase: '基本攻撃' },
 /*</ja>*/
 /*<ko>*/
-ko: { logEarly: (n) => `처음 ${n}타` },
+ko: { logEarly: (n) => `처음 ${n}타`, logBase: '기본 공격' },
 /*</ko>*/
 /*<pt>*/
-pt: { logEarly: (n) => `Primeiros ${n} golpes` },
+pt: { logEarly: (n) => `Primeiros ${n} golpes`, logBase: 'Ataque Base' },
 /*</pt>*/
 /*<es>*/
-es: { logEarly: (n) => `Primeros ${n} golpes` },
+es: { logEarly: (n) => `Primeros ${n} golpes`, logBase: 'Ataque Base' },
 /*</es>*/
 };
 for (const l of LANGS) Object.assign(I18N[l], I18N20[l]);
